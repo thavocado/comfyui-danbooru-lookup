@@ -269,7 +269,10 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                     try:
                         pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
                     except RuntimeError as e:
-                        return (f"ERROR: {e}", "", "")
+                        error_msg = str(e)
+                        if "text_projection" in error_msg:
+                            error_msg = "Tag encoding failed. The CLIP/SigLIP models may need to be re-downloaded. Try deleting the models folder and restarting."
+                        return (f"ERROR: {error_msg}", "", "")
                 
             elif mode == "conditioning":
                 # Current mode - use conditioning
@@ -286,7 +289,10 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                     try:
                         pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
                     except RuntimeError as e:
-                        return (f"ERROR: {e}", "", "")
+                        error_msg = str(e)
+                        if "text_projection" in error_msg:
+                            error_msg = "Tag encoding failed. The CLIP/SigLIP models may need to be re-downloaded. Try deleting the models folder and restarting."
+                        return (f"ERROR: {error_msg}", "", "")
                 
                 if positive_conditioning is not None or negative_conditioning is not None:
                     pos_cond_emb = self._extract_embeddings_from_conditioning(positive_conditioning)

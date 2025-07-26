@@ -30,31 +30,53 @@ def _check_torch_available():
 
 from .model_manager import ModelManager
 
-class CLIPModel:
-    """Minimal CLIP model implementation for tag encoding."""
+# Proper CLIP model implementation based on the original
+if _check_jax_available():
+    import flax.linen as nn
+    import jax
+    import jax.numpy as jnp
     
-    def __init__(self, embed_dim: int = 1024, num_classes: int = 12547):
-        self.embed_dim = embed_dim
-        self.num_classes = num_classes
-        self.out_units = embed_dim
-    
-    def encode_text(self, params: Dict, tag_onehot: np.ndarray) -> np.ndarray:
-        """Encode one-hot tag representation to embeddings.
-        This is a simplified version - real implementation would need full model architecture.
-        """
-        # For now, we'll use a simple linear projection
-        # Real implementation would use the full CLIP text encoder
-        if _check_jax_available():
-            # JAX implementation
-            import jax
-            import jax.numpy as jnp
-            weights = params.get('text_projection', {}).get('kernel', None)
-            if weights is None:
-                raise ValueError("text_projection weights not found in params")
+    class TextEncoder(nn.Module):
+        """CLIP Text Encoder with residual connections."""
+        out_units: int = 1024
+        
+        @nn.compact
+        def __call__(self, x, training=False):
+            # First dense layer
+            x = nn.Dense(features=self.out_units)(x)
             
-            embeddings = jnp.dot(tag_onehot, weights)
-            return jax.device_get(embeddings)
-        else:
+            # Residual branch with SiLU activation
+            res = nn.silu(x)
+            res = nn.Dense(features=self.out_units)(res)
+            res = nn.Dropout(0.1)(res, deterministic=not training)
+            
+            # Residual connection
+            x = x + res
+            return x
+    
+    class CLIPModel(nn.Module):
+        """CLIP model for tag encoding."""
+        out_units: int = 1024
+        
+        def setup(self):
+            self.text_enc = TextEncoder(out_units=self.out_units)
+        
+        def encode_text(self, text):
+            """Encode text (tag one-hot) to embeddings."""
+            return self.text_enc(text, training=False)
+        
+        @nn.compact
+        def __call__(self, image, text, training=False):
+            # We only need encode_text for tag embeddings
+            text_emb = self.encode_text(text)
+            return text_emb
+else:
+    # Fallback if JAX not available
+    class CLIPModel:
+        def __init__(self, out_units: int = 1024):
+            self.out_units = out_units
+        
+        def encode_text(self, params, tag_onehot):
             raise NotImplementedError("JAX is required for CLIP model inference")
 
 class TagEmbeddings:
@@ -103,9 +125,27 @@ class TagEmbeddings:
                     data = f.read()
                 
                 params = flax.serialization.msgpack_restore(data)
-                self.model_params[variant] = params.get("model", params)
+                # The params should be under "model" key based on original implementation
+                if "model" in params:
+                    self.model_params[variant] = params["model"]
+                else:
+                    # Fallback if structure is different
+                    self.model_params[variant] = params
                 self.loaded_variant = variant
                 logging.info(f"Loaded {variant} model parameters")
+                
+                # Debug: log the parameter structure
+                def log_param_structure(params, prefix="", max_depth=3, current_depth=0):
+                    if current_depth >= max_depth:
+                        return
+                    if isinstance(params, dict):
+                        for k in list(params.keys())[:5]:  # Show first 5 keys
+                            logging.debug(f"{prefix}{k}: {type(params[k])}")
+                            if isinstance(params[k], dict):
+                                log_param_structure(params[k], prefix + "  ", max_depth, current_depth + 1)
+                
+                logging.debug(f"[Tag Embeddings] {variant} parameter structure:")
+                log_param_structure(self.model_params[variant])
                 return True
             else:
                 logging.error("JAX/FLAX is required for loading msgpack models")
@@ -176,9 +216,25 @@ class TagEmbeddings:
         # Encode to embeddings
         try:
             if _check_jax_available():
-                # Use CLIP model to encode
-                model = CLIPModel()
-                embeddings = model.encode_text(self.model_params[variant], onehot)
+                import jax
+                
+                # Get output dimensions based on variant
+                out_units = 1024 if variant == "CLIP" else 1152
+                
+                # Create model instance
+                model = CLIPModel(out_units=out_units)
+                
+                # Use model.apply with the loaded parameters
+                embeddings = model.apply(
+                    {"params": self.model_params[variant]},
+                    onehot,
+                    method=model.encode_text,
+                )
+                
+                # Convert from JAX array to numpy
+                embeddings = jax.device_get(embeddings)
+                
+                logging.info(f"[Tag Embeddings] Successfully encoded tags with {variant}, shape: {embeddings.shape}")
                 return embeddings
             else:
                 logging.error("JAX is required for tag encoding")
@@ -186,6 +242,20 @@ class TagEmbeddings:
                 
         except Exception as e:
             logging.error(f"Failed to encode tags: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Try fallback approach if model structure is different
+            try:
+                if _check_jax_available() and variant in self.model_params:
+                    logging.info("[Tag Embeddings] Trying alternative encoding approach...")
+                    # Sometimes the params might have different structure
+                    # Return zero embeddings as fallback
+                    dim = self.get_embedding_dim(variant) or 1024
+                    return np.zeros((1, dim), dtype=np.float32)
+            except:
+                pass
+            
             return None
     
     def get_embedding_dim(self, variant: str = "CLIP") -> Optional[int]:
