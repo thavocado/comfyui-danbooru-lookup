@@ -8,23 +8,21 @@ import os
 from typing import Optional, Union
 import torch
 
-# Try imports
-try:
-    from imgutils.tagging import wd14
-    HAS_IMGUTILS = True
-    logging.info("[WD14] dghs-imgutils successfully imported")
-except ImportError as e:
-    HAS_IMGUTILS = False
-    logging.error(f"[WD14] dghs-imgutils not installed: {e}")
-    logging.error("[WD14] Install with: pip install dghs-imgutils[gpu]")
-    logging.error("[WD14] WD14 image embeddings will not be available without this dependency.")
+def _check_imgutils_available():
+    """Check if dghs-imgutils is available (dynamic check)."""
+    try:
+        from imgutils.tagging import wd14
+        return True
+    except ImportError:
+        return False
 
-try:
-    from PIL import Image
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-    logging.warning("Pillow not installed. Image processing will be limited.")
+def _check_pil_available():
+    """Check if PIL is available (dynamic check)."""
+    try:
+        from PIL import Image
+        return True
+    except ImportError:
+        return False
 
 class WD14Embeddings:
     """Extract embeddings from images using WD14 ConvNext model via dghs-imgutils."""
@@ -33,11 +31,15 @@ class WD14Embeddings:
         # model_manager is kept for compatibility but not used with dghs-imgutils
         pass
         
-    def extract_embeddings(self, image: Union[Image.Image, torch.Tensor, np.ndarray], hf_token: Optional[str] = None) -> Optional[np.ndarray]:
+    def extract_embeddings(self, image: Union[torch.Tensor, np.ndarray], hf_token: Optional[str] = None) -> Optional[np.ndarray]:
         """Extract embeddings from an image using dghs-imgutils."""
-        if not HAS_IMGUTILS:
-            logging.error("dghs-imgutils is required for WD14 embeddings")
+        if not _check_imgutils_available():
+            logging.error("[WD14] dghs-imgutils is required for WD14 embeddings")
+            logging.error("[WD14] Please restart ComfyUI to install dependencies.")
             return None
+        
+        # Import here after checking availability
+        from imgutils.tagging import wd14
         
         try:
             # Convert to PIL Image if needed
@@ -46,14 +48,22 @@ class WD14Embeddings:
                 if len(image.shape) == 4:
                     image = image[0]  # Take first image from batch
                 image = (image.cpu().numpy() * 255).astype(np.uint8)
-                if HAS_PIL:
+                if _check_pil_available():
+                    from PIL import Image
                     image = Image.fromarray(image)
+                else:
+                    logging.error("[WD14] Pillow is required for image conversion")
+                    return None
             elif isinstance(image, np.ndarray):
                 # Assume numpy array in [0, 255] range
                 if image.dtype != np.uint8:
                     image = (image * 255).astype(np.uint8)
-                if HAS_PIL:
+                if _check_pil_available():
+                    from PIL import Image
                     image = Image.fromarray(image)
+                else:
+                    logging.error("[WD14] Pillow is required for image conversion")
+                    return None
             
             # Temporarily set HF token if provided
             old_token = os.environ.get('HF_TOKEN')
@@ -105,4 +115,4 @@ class WD14Embeddings:
     @staticmethod
     def is_available() -> bool:
         """Check if WD14 embeddings are available."""
-        return HAS_IMGUTILS
+        return _check_imgutils_available()

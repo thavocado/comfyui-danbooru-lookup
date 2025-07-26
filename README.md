@@ -39,12 +39,7 @@ A ComfyUI custom node that performs FAISS cosine similarity lookup on Danbooru e
    git clone https://github.com/thavocado/comfyui-danbooru-lookup
    ```
 
-2. Install the required dependencies (if auto install fails):
-   ```bash
-   pip install -r comfyui-danbooru-lookup/requirements.txt
-   ```
-
-3. Restart ComfyUI
+2. Restart ComfyUI - all dependencies will be installed automatically
 
 The node will automatically download required data files (~7GB) from HuggingFace on first use. Additional models for the advanced node will be downloaded on demand.
 
@@ -107,24 +102,23 @@ This node uses embeddings and indices from the [Danbooru2022 Embeddings Playgrou
   - CLIP/SigLIP models: ~50MB each
 
 ### Dependencies
-Core dependencies (auto-installed):
+All dependencies are installed automatically when you restart ComfyUI:
 - `faiss-cpu`: FAISS similarity search
 - `pandas`, `numpy`: Data handling
 - `tqdm`: Progress bars
 - `requests`: File downloads
-
-Optional dependencies for advanced features:
 - `dghs-imgutils`: WD14 image tagging (handles model downloads automatically)
-- `huggingface-hub`: CLIP/SigLIP model downloads
+- `huggingface-hub`: Model downloads
 - `Pillow`: Image processing
-- `jax`, `flax`: CLIP/SigLIP tag encoding (optional, will fallback if not available)
+- `jax`, `jaxlib`, `flax`: CLIP/SigLIP tag encoding
 
 ## Troubleshooting
 
 ### Installation Issues
-- If auto-install fails, manually run: `pip install -r requirements.txt` in the node directory
+- If dependencies fail to install, restart ComfyUI and check the console for error messages
+- Make sure you have an active internet connection for downloading packages
 - For CUDA users: `dghs-imgutils` will automatically use GPU acceleration if available
-- On Mac: JAX may have compatibility issues; the node will work without tag encoding features
+- On Mac: JAX installation may take longer but should complete successfully
 
 ### HuggingFace Authentication
 If you get a 401 authentication error when using image inputs:
@@ -151,6 +145,17 @@ If you get errors about CLIP/SigLIP models when using tags:
 ### Memory Issues
 - The FAISS index requires ~6-7GB RAM when loaded
 - Close other applications if you encounter out-of-memory errors
+
+### OpenMP Library Conflicts (Windows)
+If ComfyUI crashes with an OpenMP error:
+- **Error**: "Initializing libomp140.x86_64.dll, but found libiomp5md.dll already initialized"
+- **Cause**: Multiple libraries (FAISS, NumPy, etc.) loading different OpenMP runtimes
+- **Solution**: The node automatically sets `KMP_DUPLICATE_LIB_OK=TRUE` to handle this
+- **Manual fix** (if needed): Set environment variable before starting ComfyUI:
+  ```batch
+  set KMP_DUPLICATE_LIB_OK=TRUE
+  python main.py
+  ```
 
 ## Examples
 

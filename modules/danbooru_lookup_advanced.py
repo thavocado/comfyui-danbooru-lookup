@@ -329,11 +329,40 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             
             # Perform search
             logging.info(f"[Danbooru Advanced] Searching with embedding shape: {embeddings.shape}")
-            dists, indexes = self.knn_index.search(embeddings, k=n_neighbours)
-            neighbours_ids = self.images_ids[indexes][0]
-            neighbours_ids = [int(x) for x in neighbours_ids]
             
-            logging.info(f"[Danbooru Advanced] Found IDs: {neighbours_ids[:5]}, distances: {dists[0][:5]}")
+            try:
+                # Ensure embeddings are the right format for FAISS
+                if not embeddings.flags['C_CONTIGUOUS']:
+                    logging.info("[Danbooru Advanced] Making embeddings C-contiguous for FAISS")
+                    embeddings = np_lib.ascontiguousarray(embeddings, dtype=np_lib.float32)
+                
+                # Check index dimension
+                if hasattr(self.knn_index, 'd'):
+                    index_dim = self.knn_index.d
+                    if index_dim != embeddings.shape[1]:
+                        error_msg = f"Dimension mismatch: index expects {index_dim} but got {embeddings.shape[1]}"
+                        logging.error(f"[Danbooru Advanced] {error_msg}")
+                        return (f"ERROR: {error_msg}", "", "")
+                
+                # Perform the search
+                dists, indexes = self.knn_index.search(embeddings, k=n_neighbours)
+                
+                # Validate results
+                if indexes is None or len(indexes) == 0:
+                    logging.error("[Danbooru Advanced] FAISS search returned no results")
+                    return ("ERROR: No results from search", "", "")
+                
+                neighbours_ids = self.images_ids[indexes][0]
+                neighbours_ids = [int(x) for x in neighbours_ids]
+                
+                logging.info(f"[Danbooru Advanced] Found IDs: {neighbours_ids[:5]}, distances: {dists[0][:5]}")
+                
+            except Exception as e:
+                error_msg = f"FAISS search failed: {str(e)}"
+                logging.error(f"[Danbooru Advanced] {error_msg}")
+                import traceback
+                traceback.print_exc()
+                return (f"ERROR: {error_msg}", "", "")
             
             # Format results
             all_ids = []

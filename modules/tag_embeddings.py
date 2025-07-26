@@ -10,23 +10,23 @@ from pathlib import Path
 from typing import Optional, List, Dict, Union
 import json
 
-# Try JAX/FLAX imports
-try:
-    import jax
-    import jax.numpy as jnp
-    import flax
-    HAS_JAX = True
-except ImportError:
-    HAS_JAX = False
-    logging.info("JAX/FLAX not installed. Will try PyTorch fallback if available.")
+def _check_jax_available():
+    """Check if JAX/FLAX is available (dynamic check)."""
+    try:
+        import jax
+        import jax.numpy as jnp
+        import flax
+        return True
+    except ImportError:
+        return False
 
-# Try PyTorch imports  
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
-    logging.info("PyTorch not installed. Tag embeddings will require JAX/FLAX.")
+def _check_torch_available():
+    """Check if PyTorch is available (dynamic check)."""
+    try:
+        import torch
+        return True
+    except ImportError:
+        return False
 
 from .model_manager import ModelManager
 
@@ -44,8 +44,10 @@ class CLIPModel:
         """
         # For now, we'll use a simple linear projection
         # Real implementation would use the full CLIP text encoder
-        if HAS_JAX:
+        if _check_jax_available():
             # JAX implementation
+            import jax
+            import jax.numpy as jnp
             weights = params.get('text_projection', {}).get('kernel', None)
             if weights is None:
                 raise ValueError("text_projection weights not found in params")
@@ -94,8 +96,9 @@ class TagEmbeddings:
             return False
         
         try:
-            if HAS_JAX:
+            if _check_jax_available():
                 # Load msgpack parameters
+                import flax
                 with open(model_path, "rb") as f:
                     data = f.read()
                 
@@ -153,11 +156,12 @@ class TagEmbeddings:
         if not self.load_model_params(variant):
             error_msg = f"Failed to load {variant} model."
             logging.error(f"[Tag Embeddings] {error_msg}")
-            logging.error("[Tag Embeddings] This feature requires JAX/FLAX to be installed:")
-            logging.error("[Tag Embeddings]   pip install jax jaxlib flax")
-            logging.error("[Tag Embeddings] Or install all features:")
-            logging.error(f"[Tag Embeddings]   pip install -r requirements-full.txt")
-            raise RuntimeError(error_msg + " Install JAX/FLAX: pip install jax jaxlib flax")
+            if not _check_jax_available():
+                logging.error("[Tag Embeddings] JAX/FLAX is required but not available.")
+                logging.error("[Tag Embeddings] Please restart ComfyUI to install dependencies.")
+                raise RuntimeError(error_msg + " Please restart ComfyUI.")
+            else:
+                raise RuntimeError(error_msg)
         
         # Convert tags to indices
         indices = self.tags_to_indices(tags)
@@ -171,7 +175,7 @@ class TagEmbeddings:
         
         # Encode to embeddings
         try:
-            if HAS_JAX:
+            if _check_jax_available():
                 # Use CLIP model to encode
                 model = CLIPModel()
                 embeddings = model.encode_text(self.model_params[variant], onehot)
@@ -196,7 +200,7 @@ class TagEmbeddings:
     @staticmethod
     def is_available() -> bool:
         """Check if tag embeddings are available."""
-        return HAS_JAX or HAS_TORCH
+        return _check_jax_available() or _check_torch_available()
     
     def encode_tags_simple(self, tags: Union[str, List[str]], variant: str = "CLIP") -> Optional[np.ndarray]:
         """

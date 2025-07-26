@@ -5,6 +5,10 @@ import logging
 from pathlib import Path
 import requests
 
+# Fix for OpenMP conflict before any scientific library imports
+if os.name == 'nt' and 'KMP_DUPLICATE_LIB_OK' not in os.environ:
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 # Delay imports to avoid errors when dependencies are not installed
 numpy = None
 faiss = None
