@@ -62,7 +62,9 @@ The node outputs a Danbooru post ID as a string.
    - **Images**: Connect image outputs from LoadImage, VAE Decode, etc.
    - **Tags**: Enter comma-separated Danbooru tags (e.g., "1girl, white_hair, blue_eyes")
    - **Conditioning**: Connect CLIP Text Encode outputs
-4. Optional: Select embedding model (CLIP or SigLIP) for tag encoding
+4. Optional settings:
+   - **Embedding Model**: Choose CLIP or SigLIP for tag encoding
+   - **HF Token**: Enter your HuggingFace token if you get authentication errors
 
 The advanced node outputs:
 - `danbooru_id`: Best matching post ID
@@ -102,10 +104,27 @@ Optional dependencies for advanced features:
 - For CUDA users: `dghs-imgutils` will automatically use GPU acceleration if available
 - On Mac: JAX may have compatibility issues; the node will work without tag encoding features
 
+### HuggingFace Authentication
+If you get a 401 authentication error when using image inputs:
+1. Get a HuggingFace token from https://huggingface.co/settings/tokens
+2. Set up authentication using one of these methods:
+   - **In ComfyUI**: Enter your token in the "HF Token" field of the advanced node
+   - **CLI**: Run `huggingface-cli login` and enter your token
+   - **Environment**: Set `export HF_TOKEN=your_token_here` (Linux/Mac) or `set HF_TOKEN=your_token_here` (Windows)
+
 ### Download Issues
 - The node automatically downloads large files on first use
 - If downloads fail, check your internet connection and try again
 - Files are cached after successful download
+
+### CLIP/SigLIP Model Issues
+If you get errors about CLIP/SigLIP models when using tags:
+- The models are hosted on HuggingFace Spaces and may fail to download
+- Error: "Failed to load CLIP model. Please ensure the model files are downloaded."
+- You can manually download the files:
+  - CLIP: https://huggingface.co/spaces/SmilingWolf/danbooru2022_embeddings_playground/resolve/main/data/wd-v1-4-convnext-tagger-v2/clip.msgpack
+  - SigLIP: https://huggingface.co/spaces/SmilingWolf/danbooru2022_embeddings_playground/resolve/main/data/wd-v1-4-convnext-tagger-v2/siglip.msgpack
+- Place them in `ComfyUI/custom_nodes/comfyui-danbooru-lookup/models/clip_model/` or `models/siglip_model/`
 
 ### Memory Issues
 - The FAISS index requires ~6-7GB RAM when loaded

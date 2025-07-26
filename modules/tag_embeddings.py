@@ -151,14 +151,16 @@ class TagEmbeddings:
         """Encode tags to embeddings."""
         # Load model if needed
         if not self.load_model_params(variant):
-            return None
+            error_msg = f"Failed to load {variant} model. Please ensure the model files are downloaded."
+            logging.error(f"[Tag Embeddings] {error_msg}")
+            raise RuntimeError(error_msg)
         
         # Convert tags to indices
         indices = self.tags_to_indices(tags)
         if not indices:
-            logging.warning("No valid tags found")
-            # Return zero embeddings
-            return np.zeros((1, 1024), dtype=np.float32)  # Assuming 1024 dim
+            error_msg = f"No valid tags found in: {tags}. Tags must match Danbooru vocabulary."
+            logging.error(f"[Tag Embeddings] {error_msg}")
+            raise ValueError(error_msg)
         
         # Create one-hot encoding
         onehot = self.create_onehot(indices)

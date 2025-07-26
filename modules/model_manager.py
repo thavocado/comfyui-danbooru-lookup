@@ -33,13 +33,13 @@ class ModelManager:
         # Model configurations
         self.model_configs = {
             "clip_model": {
-                "repo_id": "SmilingWolf/danbooru2022_embeddings_playground",
-                "files": ["data/wd-v1-4-convnext-tagger-v2/clip.msgpack"],
+                "direct_url": "https://huggingface.co/spaces/SmilingWolf/danbooru2022_embeddings_playground/resolve/main/data/wd-v1-4-convnext-tagger-v2/clip.msgpack",
+                "filename": "clip.msgpack",
                 "type": "msgpack"
             },
             "siglip_model": {
-                "repo_id": "SmilingWolf/danbooru2022_embeddings_playground",
-                "files": ["data/wd-v1-4-convnext-tagger-v2/siglip.msgpack"],
+                "direct_url": "https://huggingface.co/spaces/SmilingWolf/danbooru2022_embeddings_playground/resolve/main/data/wd-v1-4-convnext-tagger-v2/siglip.msgpack",
+                "filename": "siglip.msgpack",
                 "type": "msgpack"
             }
         }
@@ -59,44 +59,55 @@ class ModelManager:
         if not force_download and self._is_model_complete(model_dir, config):
             return model_dir
         
-        # Download model
-        if not HAS_HF_HUB:
-            raise RuntimeError(
-                "huggingface_hub is required for model downloads. "
-                "Install with: pip install huggingface-hub"
-            )
-        
         logging.info(f"Downloading {model_name} model...")
         model_dir.mkdir(exist_ok=True)
         
-        try:
-            for file_path in config["files"]:
-                local_path = model_dir / Path(file_path).name
+        # Use direct download for msgpack files
+        if "direct_url" in config:
+            try:
+                import requests
+                local_path = model_dir / config["filename"]
                 
                 if force_download or not local_path.exists():
-                    hf_hub_download(
-                        repo_id=config["repo_id"],
-                        filename=file_path,
-                        local_dir=model_dir,
-                        local_dir_use_symlinks=False
-                    )
-            
-            logging.info(f"Model {model_name} downloaded successfully")
-            return model_dir
-            
-        except Exception as e:
-            logging.error(f"Failed to download {model_name}: {e}")
-            raise
+                    logging.info(f"Downloading from: {config['direct_url']}")
+                    response = requests.get(config['direct_url'], stream=True)
+                    response.raise_for_status()
+                    
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                    
+                    logging.info(f"Model {model_name} downloaded successfully")
+                
+                return model_dir
+                
+            except Exception as e:
+                logging.error(f"Failed to download {model_name}: {e}")
+                logging.error(f"You may need to manually download the file from:")
+                logging.error(f"  {config['direct_url']}")
+                logging.error(f"And place it at: {model_dir / config['filename']}")
+                raise
+        else:
+            # Original HF hub download logic (not used for msgpack files)
+            raise NotImplementedError("HF hub download not supported for this model type")
     
     def _is_model_complete(self, model_dir: Path, config: Dict[str, Any]) -> bool:
         """Check if all model files are present."""
         if not model_dir.exists():
             return False
         
-        for file_path in config["files"]:
-            local_path = model_dir / Path(file_path).name
-            if not local_path.exists():
-                return False
+        # Check for direct download models
+        if "filename" in config:
+            local_path = model_dir / config["filename"]
+            return local_path.exists()
+        
+        # Legacy check for HF hub models
+        if "files" in config:
+            for file_path in config["files"]:
+                local_path = model_dir / Path(file_path).name
+                if not local_path.exists():
+                    return False
         
         return True
     

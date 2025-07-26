@@ -4,6 +4,7 @@ WD14 tagger embeddings extraction for image inputs using dghs-imgutils.
 
 import logging
 import numpy as np
+import os
 from typing import Optional, Union
 import torch
 
@@ -11,9 +12,12 @@ import torch
 try:
     from imgutils.tagging import wd14
     HAS_IMGUTILS = True
-except ImportError:
+    logging.info("[WD14] dghs-imgutils successfully imported")
+except ImportError as e:
     HAS_IMGUTILS = False
-    logging.warning("dghs-imgutils not installed. WD14 image embeddings will not be available.")
+    logging.error(f"[WD14] dghs-imgutils not installed: {e}")
+    logging.error("[WD14] Install with: pip install dghs-imgutils[gpu]")
+    logging.error("[WD14] WD14 image embeddings will not be available without this dependency.")
 
 try:
     from PIL import Image
@@ -29,7 +33,7 @@ class WD14Embeddings:
         # model_manager is kept for compatibility but not used with dghs-imgutils
         pass
         
-    def extract_embeddings(self, image: Union[Image.Image, torch.Tensor, np.ndarray]) -> Optional[np.ndarray]:
+    def extract_embeddings(self, image: Union[Image.Image, torch.Tensor, np.ndarray], hf_token: Optional[str] = None) -> Optional[np.ndarray]:
         """Extract embeddings from an image using dghs-imgutils."""
         if not HAS_IMGUTILS:
             logging.error("dghs-imgutils is required for WD14 embeddings")
@@ -51,13 +55,27 @@ class WD14Embeddings:
                 if HAS_PIL:
                     image = Image.fromarray(image)
             
-            # Use dghs-imgutils to get embeddings
-            # The library handles all preprocessing internally
-            embeddings = wd14.get_wd14_tags(
-                image,
-                model_name="ConvNext",
-                fmt="embedding"  # This returns embeddings instead of tags
-            )
+            # Temporarily set HF token if provided
+            old_token = os.environ.get('HF_TOKEN')
+            if hf_token:
+                os.environ['HF_TOKEN'] = hf_token
+                logging.info("[WD14] Using provided HuggingFace token")
+            
+            try:
+                # Use dghs-imgutils to get embeddings
+                # The library handles all preprocessing internally
+                embeddings = wd14.get_wd14_tags(
+                    image,
+                    model_name="ConvNext",
+                    fmt="embedding"  # This returns embeddings instead of tags
+                )
+            finally:
+                # Restore original token
+                if hf_token:
+                    if old_token:
+                        os.environ['HF_TOKEN'] = old_token
+                    else:
+                        os.environ.pop('HF_TOKEN', None)
             
             # Match original behavior - always expand dims
             embeddings = np.expand_dims(embeddings, 0)
@@ -67,7 +85,16 @@ class WD14Embeddings:
             return embeddings.astype(np.float32)
             
         except Exception as e:
-            logging.error(f"Failed to extract embeddings: {e}")
+            error_str = str(e)
+            if "401" in error_str or "authentication" in error_str.lower() or "unauthorized" in error_str.lower():
+                logging.error("[WD14] HuggingFace authentication error detected!")
+                logging.error("[WD14] The WD14 model may require authentication.")
+                logging.error("[WD14] Please set up HuggingFace authentication:")
+                logging.error("[WD14] 1. Get a token from https://huggingface.co/settings/tokens")
+                logging.error("[WD14] 2. Run: huggingface-cli login")
+                logging.error("[WD14] OR set environment variable: HF_TOKEN=your_token_here")
+            else:
+                logging.error(f"[WD14] Failed to extract embeddings: {e}")
             return None
     
     def get_embedding_dim(self) -> Optional[int]:

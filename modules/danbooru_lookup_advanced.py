@@ -31,16 +31,21 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
     def _check_available_modes(self):
         """Check which modes are available based on dependencies."""
         deps = self.model_manager.check_dependencies()
+        
+        # Check individual capabilities
+        self.can_process_images = WD14Embeddings.is_available()
+        self.can_process_tags = TagEmbeddings.is_available()
+        
         self.modes_available = {
             "conditioning": True,  # Always available
-            "tags_and_images": (
-                WD14Embeddings.is_available() or 
-                TagEmbeddings.is_available()
-            ),
+            "tags_and_images": (self.can_process_images or self.can_process_tags),
             "hybrid": True  # Can work with partial inputs
         }
         
-        # Log available modes
+        # Log available modes and capabilities
+        logging.info(f"[Danbooru Advanced] Image processing available: {self.can_process_images}")
+        logging.info(f"[Danbooru Advanced] Tag processing available: {self.can_process_tags}")
+        
         for mode, available in self.modes_available.items():
             if available:
                 logging.info(f"[Danbooru Advanced] Mode '{mode}' is available")
@@ -95,6 +100,11 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                 }),
                 "api_username": ("STRING", {"default": "", "multiline": False}),
                 "api_key": ("STRING", {"default": "", "multiline": False}),
+                "hf_token": ("STRING", {
+                    "default": "", 
+                    "multiline": False,
+                    "placeholder": "HuggingFace token (optional)"
+                }),
             }
         }
     
@@ -103,20 +113,30 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
     FUNCTION = "lookup_advanced"
     CATEGORY = "conditioning/danbooru"
     
-    def _process_image_embeddings(self, positive_image, negative_image) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def _process_image_embeddings(self, positive_image, negative_image, hf_token=None) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Process images to embeddings using WD14."""
         pos_img_emb = None
         neg_img_emb = None
         
+        # Check if WD14 is available
+        if (positive_image is not None or negative_image is not None) and not self.wd14_embeddings.is_available():
+            logging.error("[Danbooru Advanced] Images provided but WD14 embeddings not available!")
+            logging.error("[Danbooru Advanced] Please install: pip install dghs-imgutils[gpu]")
+            return None, None
+        
         if positive_image is not None and self.wd14_embeddings.is_available():
-            pos_img_emb = self.wd14_embeddings.extract_embeddings(positive_image)
+            pos_img_emb = self.wd14_embeddings.extract_embeddings(positive_image, hf_token=hf_token)
             if pos_img_emb is not None:
                 logging.info(f"[Danbooru Advanced] Positive image embedding shape: {pos_img_emb.shape}")
+            else:
+                logging.error("[Danbooru Advanced] Failed to extract positive image embeddings")
         
         if negative_image is not None and self.wd14_embeddings.is_available():
-            neg_img_emb = self.wd14_embeddings.extract_embeddings(negative_image)
+            neg_img_emb = self.wd14_embeddings.extract_embeddings(negative_image, hf_token=hf_token)
             if neg_img_emb is not None:
                 logging.info(f"[Danbooru Advanced] Negative image embedding shape: {neg_img_emb.shape}")
+            else:
+                logging.error("[Danbooru Advanced] Failed to extract negative image embeddings")
         
         return pos_img_emb, neg_img_emb
     
@@ -125,15 +145,22 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         pos_tag_emb = None
         neg_tag_emb = None
         
-        if positive_tags and self.tag_embeddings.is_available():
-            pos_tag_emb = self.tag_embeddings.encode_tags(positive_tags, model_variant)
-            if pos_tag_emb is not None:
-                logging.info(f"[Danbooru Advanced] Positive tag embedding shape: {pos_tag_emb.shape}")
-        
-        if negative_tags and self.tag_embeddings.is_available():
-            neg_tag_emb = self.tag_embeddings.encode_tags(negative_tags, model_variant)
-            if neg_tag_emb is not None:
-                logging.info(f"[Danbooru Advanced] Negative tag embedding shape: {neg_tag_emb.shape}")
+        try:
+            if positive_tags and self.tag_embeddings.is_available():
+                pos_tag_emb = self.tag_embeddings.encode_tags(positive_tags, model_variant)
+                if pos_tag_emb is not None:
+                    logging.info(f"[Danbooru Advanced] Positive tag embedding shape: {pos_tag_emb.shape}")
+            
+            if negative_tags and self.tag_embeddings.is_available():
+                neg_tag_emb = self.tag_embeddings.encode_tags(negative_tags, model_variant)
+                if neg_tag_emb is not None:
+                    logging.info(f"[Danbooru Advanced] Negative tag embedding shape: {neg_tag_emb.shape}")
+                    
+        except (RuntimeError, ValueError) as e:
+            # Re-raise with more context
+            error_msg = f"Tag processing failed: {str(e)}"
+            logging.error(f"[Danbooru Advanced] {error_msg}")
+            raise RuntimeError(error_msg)
         
         return pos_tag_emb, neg_tag_emb
     
@@ -206,7 +233,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                        positive_conditioning=None, negative_conditioning=None,
                        embedding_model="from_conditioning",
                        selected_ratings="General,Sensitive", n_neighbours=5,
-                       api_username="", api_key=""):
+                       api_username="", api_key="", hf_token=""):
         """
         Perform advanced FAISS lookup with multiple input modes.
         Returns the top matching Danbooru post ID, all IDs, and similarity scores.
@@ -232,11 +259,14 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             if mode == "tags_and_images":
                 # Original mode - use images and tags
                 if positive_image is not None or negative_image is not None:
-                    pos_img_emb, neg_img_emb = self._process_image_embeddings(positive_image, negative_image)
+                    pos_img_emb, neg_img_emb = self._process_image_embeddings(positive_image, negative_image, hf_token)
                 
                 if positive_tags or negative_tags:
                     model_variant = embedding_model if embedding_model != "from_conditioning" else "CLIP"
-                    pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
+                    try:
+                        pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
+                    except RuntimeError as e:
+                        return (f"ERROR: {e}", "", "")
                 
             elif mode == "conditioning":
                 # Current mode - use conditioning
@@ -246,11 +276,14 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             elif mode == "hybrid":
                 # New mode - use all available inputs
                 if positive_image is not None or negative_image is not None:
-                    pos_img_emb, neg_img_emb = self._process_image_embeddings(positive_image, negative_image)
+                    pos_img_emb, neg_img_emb = self._process_image_embeddings(positive_image, negative_image, hf_token)
                 
                 if positive_tags or negative_tags:
                     model_variant = embedding_model if embedding_model != "from_conditioning" else "CLIP"
-                    pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
+                    try:
+                        pos_tag_emb, neg_tag_emb = self._process_tag_embeddings(positive_tags, negative_tags, model_variant)
+                    except RuntimeError as e:
+                        return (f"ERROR: {e}", "", "")
                 
                 if positive_conditioning is not None or negative_conditioning is not None:
                     pos_cond_emb = self._extract_embeddings_from_conditioning(positive_conditioning)
@@ -259,7 +292,21 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             # Check if we have any inputs
             if (pos_img_emb is None and pos_tag_emb is None and pos_cond_emb is None and
                 neg_img_emb is None and neg_tag_emb is None and neg_cond_emb is None):
-                error_msg = f"No valid inputs provided for mode '{mode}'. Please provide at least one input."
+                
+                # Provide specific error based on what was attempted
+                if mode == "tags_and_images":
+                    if (positive_image is not None or negative_image is not None) and not self.can_process_images:
+                        error_msg = "Images provided but dghs-imgutils not installed. Install with: pip install dghs-imgutils[gpu]"
+                    elif (positive_tags or negative_tags) and not self.can_process_tags:
+                        error_msg = "Tags provided but CLIP/SigLIP models not available. Check JAX/FLAX installation."
+                    elif (positive_image is not None or negative_image is not None):
+                        # Images were provided and dghs-imgutils is installed, but embeddings failed
+                        error_msg = "Failed to process images. Check console for details (may be HF auth issue)."
+                    else:
+                        error_msg = f"No valid inputs provided for mode '{mode}'. Please provide images or tags."
+                else:
+                    error_msg = f"No valid inputs provided for mode '{mode}'. Please provide at least one input."
+                
                 logging.error(f"[Danbooru Advanced] {error_msg}")
                 return ("ERROR: " + error_msg, "", "")
             
