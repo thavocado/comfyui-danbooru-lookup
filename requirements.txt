@@ -10,9 +10,8 @@ huggingface-hub>=0.16.0
 Pillow>=9.0.0
 
 # For WD14 tagger support (optional)
-# Note: This will install GPU version if CUDA is available
-onnxruntime-gpu>=1.15.0 ; platform_system != "Darwin"
-onnxruntime>=1.15.0 ; platform_system == "Darwin"  # Mac doesn't support onnxruntime-gpu
+# Note: GPU version for better performance (ComfyUI users typically have GPUs)
+dghs-imgutils[gpu]>=0.17.0
 
 # For CLIP/SigLIP model support (optional)
 # Note: These can be large, install only if needed

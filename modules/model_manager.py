@@ -32,11 +32,6 @@ class ModelManager:
         
         # Model configurations
         self.model_configs = {
-            "wd14_convnext": {
-                "repo_id": "SmilingWolf/wd-v1-4-convnext-tagger-v2",
-                "files": ["model.onnx", "selected_tags.csv"],
-                "type": "onnx"
-            },
             "clip_model": {
                 "repo_id": "SmilingWolf/danbooru2022_embeddings_playground",
                 "files": ["data/wd-v1-4-convnext-tagger-v2/clip.msgpack"],
@@ -105,24 +100,6 @@ class ModelManager:
         
         return True
     
-    def get_wd14_model_path(self) -> Optional[Path]:
-        """Get path to WD14 model, downloading if necessary."""
-        try:
-            model_dir = self.ensure_model("wd14_convnext")
-            return model_dir / "model.onnx"
-        except Exception as e:
-            logging.error(f"Failed to get WD14 model: {e}")
-            return None
-    
-    def get_wd14_tags_path(self) -> Optional[Path]:
-        """Get path to WD14 tags file."""
-        try:
-            model_dir = self.ensure_model("wd14_convnext")
-            return model_dir / "selected_tags.csv"
-        except Exception as e:
-            logging.error(f"Failed to get WD14 tags: {e}")
-            return None
-    
     def get_clip_model_path(self, variant: str = "CLIP") -> Optional[Path]:
         """Get path to CLIP/SigLIP model weights."""
         model_name = "clip_model" if variant == "CLIP" else "siglip_model"
@@ -142,15 +119,15 @@ class ModelManager:
         """Check which dependencies are available."""
         deps = {
             "huggingface_hub": HAS_HF_HUB,
-            "onnxruntime": False,
+            "dghs_imgutils": False,
             "flax": False,
             "jax": False,
             "torch": False,
         }
         
         try:
-            import onnxruntime
-            deps["onnxruntime"] = True
+            import imgutils
+            deps["dghs_imgutils"] = True
         except ImportError:
             pass
         

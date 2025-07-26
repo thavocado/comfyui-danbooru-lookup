@@ -69,16 +69,11 @@ class TagEmbeddings:
         if self.tags_df is not None:
             return True
         
-        # First try from the data directory (already downloaded by main lookup)
+        # Try from the data directory (already downloaded by main lookup)
         data_path = Path(__file__).parent.parent / "data" / "data" / "selected_tags.csv"
         if not data_path.exists():
-            # Try from WD14 model directory
-            tags_path = self.model_manager.get_wd14_tags_path()
-            if tags_path and tags_path.exists():
-                data_path = tags_path
-            else:
-                logging.error("selected_tags.csv not found")
-                return False
+            logging.error("selected_tags.csv not found")
+            return False
         
         try:
             self.tags_df = pd.read_csv(data_path)

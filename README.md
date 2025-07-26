@@ -79,7 +79,7 @@ This node uses embeddings and indices from the [Danbooru2022 Embeddings Playgrou
 - Python 3.8+
 - ~7GB disk space for FAISS index files
 - Additional space for optional models:
-  - WD14 ConvNext model: ~400MB
+  - WD14 ConvNext model: ~400MB (auto-downloaded by dghs-imgutils)
   - CLIP/SigLIP models: ~50MB each
 
 ### Dependencies
@@ -90,8 +90,8 @@ Core dependencies (auto-installed):
 - `requests`: File downloads
 
 Optional dependencies for advanced features:
-- `onnxruntime` or `onnxruntime-gpu`: WD14 image tagging
-- `huggingface-hub`: Model downloads
+- `dghs-imgutils`: WD14 image tagging (handles model downloads automatically)
+- `huggingface-hub`: CLIP/SigLIP model downloads
 - `Pillow`: Image processing
 - `jax`, `flax`: CLIP/SigLIP tag encoding (optional, will fallback if not available)
 
@@ -99,7 +99,7 @@ Optional dependencies for advanced features:
 
 ### Installation Issues
 - If auto-install fails, manually run: `pip install -r requirements.txt` in the node directory
-- For CUDA users: Install `onnxruntime-gpu` instead of `onnxruntime` for better performance
+- For CUDA users: `dghs-imgutils` will automatically use GPU acceleration if available
 - On Mac: JAX may have compatibility issues; the node will work without tag encoding features
 
 ### Download Issues
