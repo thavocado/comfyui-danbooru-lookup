@@ -60,6 +60,11 @@ except ImportError:
     missing_deps.append("Pillow")
     
 try:
+    import msgpack
+except ImportError:
+    missing_deps.append("msgpack")
+
+try:
     import jax
     import flax
 except ImportError as e:
@@ -294,15 +299,30 @@ if missing_deps:
                         verification_failed.append("PIL")
                     
                     try:
+                        # Check if JAX is already loaded to avoid PyTreeDef re-registration
+                        jax_already_loaded = 'jax' in sys.modules and hasattr(sys.modules['jax'], '__version__')
+                        
                         import jax
                         import jax.numpy as jnp
                         import flax
-                        print("[Danbooru Lookup] ✓ JAX/FLAX verified")
+                        
+                        # Only print success if this is a fresh import
+                        if not jax_already_loaded:
+                            print("[Danbooru Lookup] ✓ JAX/FLAX verified")
+                        else:
+                            print("[Danbooru Lookup] ✓ JAX/FLAX already loaded")
+                            
                     except ImportError as e:
                         verification_failed.append("jax/flax")
                         print(f"[Danbooru Lookup] JAX/FLAX import error: {e}")
                         import traceback
                         traceback.print_exc()
+                    except Exception as e:
+                        # Catch non-ImportError exceptions like PyTreeDef registration
+                        print(f"[Danbooru Lookup] JAX/FLAX initialization error ({type(e).__name__}): {e}")
+                        # Don't add to verification_failed if it's just a re-registration issue
+                        if "PyTreeDef" not in str(e):
+                            verification_failed.append("jax/flax")
                     
                     if not verification_failed:
                         DEPENDENCIES_INSTALLED = True
@@ -312,8 +332,19 @@ if missing_deps:
                         print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
                         
                 except Exception as e:
-                    print(f"[Danbooru Lookup] Verification error: {e}")
-                    print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
+                    print(f"[Danbooru Lookup] Verification error ({type(e).__name__}): {e}")
+                    if "PyTreeDef" in str(e):
+                        print("[Danbooru Lookup] JAX is already initialized. This is usually fine.")
+                        # If only JAX had the PyTreeDef issue but everything else verified, consider it success
+                        if not verification_failed or verification_failed == ["jax/flax"]:
+                            DEPENDENCIES_INSTALLED = True
+                            print("[Danbooru Lookup] Dependencies verified (JAX already loaded).")
+                        else:
+                            print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
+                    else:
+                        print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
+                        import traceback
+                        traceback.print_exc()
                         
         except Exception as install_error:
             print(f"[Danbooru Lookup] Installation error: {install_error}")

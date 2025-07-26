@@ -19,6 +19,7 @@ Pillow>=9.0.0
 dghs-imgutils[gpu]>=0.17.0
 
 # For CLIP/SigLIP tag support
+msgpack>=1.0.0
 jax>=0.4.0
 jaxlib>=0.4.0
 flax>=0.7.0
