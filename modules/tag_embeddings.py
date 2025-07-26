@@ -48,38 +48,19 @@ from .model_manager import ModelManager
 # Lazy model loading - don't import JAX at module level
 _clip_model_class = None
 _jax_import_error = None
+_models_defined = False
 
-def _get_clip_model_class():
-    """Get the CLIP model class, importing JAX only when needed."""
-    global _clip_model_class, _jax_import_error
-    
-    if _clip_model_class is not None:
-        return _clip_model_class
-    
-    if _jax_import_error:
-        # We already tried and failed
-        raise _jax_import_error
-    
+# Define model classes at module level when JAX is available
+TextEncoder = None
+CLIPModel = None
+
+# Try to define models once when module loads (if JAX available)
+if _check_jax_available():
     try:
-        if not _check_jax_available():
-            raise ImportError("JAX is not available")
-        
-        # Import JAX modules only when actually needed
-        # But check if they're already imported first
         if 'flax.linen' in sys.modules:
             nn = sys.modules['flax.linen']
         else:
             import flax.linen as nn
-            
-        if 'jax' in sys.modules:
-            jax = sys.modules['jax']
-        else:
-            import jax
-            
-        if 'jax.numpy' in sys.modules:
-            jnp = sys.modules['jax.numpy']
-        else:
-            import jax.numpy as jnp
         
         class TextEncoder(nn.Module):
             """CLIP Text Encoder with residual connections."""
@@ -116,8 +97,81 @@ def _get_clip_model_class():
                 text_emb = self.encode_text(text)
                 return text_emb
         
+        _models_defined = True
         _clip_model_class = CLIPModel
-        return CLIPModel
+        
+    except Exception as e:
+        if "PyTreeDef" not in str(e):
+            logging.error(f"[Tag Embeddings] Failed to define CLIP models: {e}")
+        _models_defined = False
+
+def _get_clip_model_class():
+    """Get the CLIP model class, importing JAX only when needed."""
+    global _clip_model_class, _jax_import_error, _models_defined, TextEncoder, CLIPModel
+    
+    # If models are already defined, return them
+    if _models_defined and _clip_model_class is not None:
+        return _clip_model_class
+    
+    if _jax_import_error:
+        # We already tried and failed
+        raise _jax_import_error
+    
+    try:
+        if not _check_jax_available():
+            raise ImportError("JAX is not available")
+        
+        # If we get here but models aren't defined, it means we need to define them now
+        if not _models_defined:
+            # Import JAX modules
+            if 'flax.linen' in sys.modules:
+                nn = sys.modules['flax.linen']
+            else:
+                import flax.linen as nn
+            
+            # Only define if not already in globals
+            if 'TextEncoder' not in globals() or TextEncoder is None:
+                class TextEncoder(nn.Module):
+                    """CLIP Text Encoder with residual connections."""
+                    out_units: int = 1024
+                    
+                    @nn.compact
+                    def __call__(self, x, training=False):
+                        # First dense layer
+                        x = nn.Dense(features=self.out_units)(x)
+                        
+                        # Residual branch with SiLU activation
+                        res = nn.silu(x)
+                        res = nn.Dense(features=self.out_units)(res)
+                        res = nn.Dropout(0.1)(res, deterministic=not training)
+                        
+                        # Residual connection
+                        x = x + res
+                        return x
+                
+                class CLIPModel(nn.Module):
+                    """CLIP model for tag encoding."""
+                    out_units: int = 1024
+                    
+                    def setup(self):
+                        self.text_enc = TextEncoder(out_units=self.out_units)
+                    
+                    def encode_text(self, text):
+                        """Encode text (tag one-hot) to embeddings."""
+                        return self.text_enc(text, training=False)
+                    
+                    @nn.compact
+                    def __call__(self, image, text, training=False):
+                        # We only need encode_text for tag embeddings
+                        text_emb = self.encode_text(text)
+                        return text_emb
+                
+                globals()['TextEncoder'] = TextEncoder
+                globals()['CLIPModel'] = CLIPModel
+                _clip_model_class = CLIPModel
+                _models_defined = True
+        
+        return _clip_model_class
         
     except Exception as e:
         _jax_import_error = e
@@ -272,20 +326,16 @@ class TagEmbeddings:
             # Get output dimensions based on variant
             out_units = 1024 if variant == "CLIP" else 1152
             
-            # Get the model class (this will import JAX only when first used)
+            # Get the model class
             try:
-                CLIPModel = _get_clip_model_class()
+                model_class = _get_clip_model_class()
             except Exception as e:
                 if "PyTreeDef" in str(e):
-                    logging.error("[Tag Embeddings] JAX PyTreeDef conflict detected. JAX may already be loaded elsewhere.")
-                    logging.error("[Tag Embeddings] Returning zero embeddings as fallback.")
-                    dim = self.get_embedding_dim(variant) or 1024
-                    return np.zeros((1, dim), dtype=np.float32)
-                else:
-                    raise
+                    logging.error("[Tag Embeddings] JAX PyTreeDef conflict detected.")
+                raise
             
             # Create model instance
-            model = CLIPModel(out_units=out_units)
+            model = model_class(out_units=out_units)
             
             # Import jax only when needed, but check if already loaded
             if 'jax' in sys.modules:
@@ -307,27 +357,10 @@ class TagEmbeddings:
             return embeddings
                 
         except Exception as e:
-            error_msg = str(e)
-            if "PyTreeDef" in error_msg:
-                logging.error("[Tag Embeddings] JAX initialization conflict. This often happens when JAX is already loaded.")
-                logging.error("[Tag Embeddings] Returning zero embeddings to allow node to function.")
-                dim = self.get_embedding_dim(variant) or 1024
-                return np.zeros((1, dim), dtype=np.float32)
-            else:
-                logging.error(f"Failed to encode tags: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                # Try fallback approach
-                try:
-                    if variant in self.model_params:
-                        logging.info("[Tag Embeddings] Using fallback zero embeddings...")
-                        dim = self.get_embedding_dim(variant) or 1024
-                        return np.zeros((1, dim), dtype=np.float32)
-                except:
-                    pass
-                
-                return None
+            logging.error(f"Failed to encode tags: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def get_embedding_dim(self, variant: str = "CLIP") -> Optional[int]:
         """Get the embedding dimension for the model."""
