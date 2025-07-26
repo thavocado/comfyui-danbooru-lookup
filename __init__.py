@@ -62,8 +62,9 @@ except ImportError:
 try:
     import jax
     import flax
-except ImportError:
+except ImportError as e:
     missing_deps.append("jax/flax")
+    print(f"[Danbooru Lookup] Initial JAX/FLAX detection failed: {e}")
 
 if missing_deps:
     DEPENDENCIES_INSTALLED = False
@@ -238,17 +239,28 @@ if missing_deps:
                     import importlib
                     import importlib.util
                     
-                    # Force reimport of key modules
-                    for mod in ['jax', 'flax', 'faiss', 'imgutils']:
+                    # Force reimport of key modules - including submodules
+                    modules_to_remove = []
+                    for mod_name in list(sys.modules.keys()):
+                        if mod_name.startswith(('jax.', 'jax_', 'flax.', 'faiss.', 'imgutils.')):
+                            modules_to_remove.append(mod_name)
+                        elif mod_name in ['jax', 'flax', 'faiss', 'imgutils']:
+                            modules_to_remove.append(mod_name)
+                    
+                    for mod in modules_to_remove:
                         if mod in sys.modules:
                             del sys.modules[mod]
+                    
+                    if modules_to_remove:
+                        print(f"[Danbooru Lookup] Cleared {len(modules_to_remove)} cached modules")
                     
                     # Verify each dependency individually
                     try:
                         import faiss
                         print("[Danbooru Lookup] ✓ faiss verified")
-                    except ImportError:
+                    except ImportError as e:
                         verification_failed.append("faiss")
+                        print(f"[Danbooru Lookup] faiss import error: {e}")
                     
                     try:
                         import pandas
@@ -271,8 +283,9 @@ if missing_deps:
                     try:
                         from imgutils.tagging import wd14
                         print("[Danbooru Lookup] ✓ dghs-imgutils verified")
-                    except ImportError:
+                    except ImportError as e:
                         verification_failed.append("dghs-imgutils")
+                        print(f"[Danbooru Lookup] dghs-imgutils import error: {e}")
                     
                     try:
                         import PIL
@@ -285,8 +298,11 @@ if missing_deps:
                         import jax.numpy as jnp
                         import flax
                         print("[Danbooru Lookup] ✓ JAX/FLAX verified")
-                    except ImportError:
+                    except ImportError as e:
                         verification_failed.append("jax/flax")
+                        print(f"[Danbooru Lookup] JAX/FLAX import error: {e}")
+                        import traceback
+                        traceback.print_exc()
                     
                     if not verification_failed:
                         DEPENDENCIES_INSTALLED = True
