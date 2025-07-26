@@ -98,8 +98,25 @@ if missing_deps:
                             if dep == "dghs-imgutils":
                                 pkg = "dghs-imgutils>=0.17.0"
                             elif dep == "jax/flax":
-                                # Skip JAX for now if there's a lock issue
-                                continue
+                                # JAX needs special handling - install components separately
+                                print("[Danbooru Lookup] Installing JAX/FLAX components...")
+                                jax_packages = ["jax", "jaxlib", "flax"]
+                                jax_success = True
+                                for jax_pkg in jax_packages:
+                                    try:
+                                        cmd = [sys.executable, "-m", "pip", "install", jax_pkg]
+                                        result = subprocess.run(cmd, capture_output=True, text=True)
+                                        if result.returncode == 0:
+                                            print(f"[Danbooru Lookup]   Installed {jax_pkg}")
+                                        else:
+                                            print(f"[Danbooru Lookup]   Failed to install {jax_pkg}")
+                                            jax_success = False
+                                    except Exception as e:
+                                        print(f"[Danbooru Lookup]   Error installing {jax_pkg}: {e}")
+                                        jax_success = False
+                                if jax_success:
+                                    install_success = True
+                                continue  # Skip to next dependency
                             else:
                                 pkg = dep
                             
@@ -144,16 +161,28 @@ if missing_deps:
                             except Exception as e:
                                 print(f"[Danbooru Lookup] Error installing {pkg}: {e}")
                         
-                        # Try JAX last
-                        if "jax/flax" in missing_deps:
+                        # Try JAX last if not already handled
+                        if "jax/flax" in missing_deps and not install_success:
+                            print("[Danbooru Lookup] Attempting JAX/FLAX installation as last resort...")
+                            jax_installed = 0
                             for pkg in ["jax", "jaxlib", "flax"]:
                                 try:
                                     cmd = [sys.executable, "-m", "pip", "install", pkg]
                                     result = subprocess.run(cmd, capture_output=True, text=True)
                                     if result.returncode == 0:
                                         print(f"[Danbooru Lookup] Installed {pkg}")
-                                except:
-                                    pass
+                                        jax_installed += 1
+                                    else:
+                                        print(f"[Danbooru Lookup] Failed to install {pkg}")
+                                        if result.stderr:
+                                            error_lines = result.stderr.strip().split('\n')[:2]
+                                            for line in error_lines:
+                                                print(f"[Danbooru Lookup]   {line}")
+                                except Exception as e:
+                                    print(f"[Danbooru Lookup] Error installing {pkg}: {e}")
+                            
+                            if jax_installed == 3:
+                                install_success = True
                         
                         # Final check - see what's actually available now
                         print("[Danbooru Lookup] Checking what was actually installed...")
@@ -201,30 +230,73 @@ if missing_deps:
             
             if install_success:
                 # Try to reload modules to pick up newly installed packages
+                print("[Danbooru Lookup] Verifying installed dependencies...")
+                verification_failed = []
+                
                 try:
+                    # Clear import cache for these modules
                     import importlib
-                    # Reload modules to pick up newly installed packages
-                    modules_to_reload = [
-                        'comfyui-danbooru-lookup.modules.tag_embeddings',
-                        'comfyui-danbooru-lookup.modules.wd14_embeddings',
-                        'comfyui-danbooru-lookup.modules.danbooru_lookup_advanced'
-                    ]
-                    for module in modules_to_reload:
-                        if module in sys.modules:
-                            importlib.reload(sys.modules[module])
-                    print("[Danbooru Lookup] Reloaded modules to detect newly installed packages.")
-                    # Re-check ALL dependencies
-                    import faiss
-                    import pandas
-                    import numpy
-                    import tqdm
-                    from imgutils.tagging import wd14
-                    import PIL
-                    import jax
-                    import flax
-                    DEPENDENCIES_INSTALLED = True
-                    print("[Danbooru Lookup] Dependencies installed and verified successfully!")
-                except:
+                    import importlib.util
+                    
+                    # Force reimport of key modules
+                    for mod in ['jax', 'flax', 'faiss', 'imgutils']:
+                        if mod in sys.modules:
+                            del sys.modules[mod]
+                    
+                    # Verify each dependency individually
+                    try:
+                        import faiss
+                        print("[Danbooru Lookup] ✓ faiss verified")
+                    except ImportError:
+                        verification_failed.append("faiss")
+                    
+                    try:
+                        import pandas
+                        print("[Danbooru Lookup] ✓ pandas verified")
+                    except ImportError:
+                        verification_failed.append("pandas")
+                    
+                    try:
+                        import numpy
+                        print("[Danbooru Lookup] ✓ numpy verified")
+                    except ImportError:
+                        verification_failed.append("numpy")
+                    
+                    try:
+                        import tqdm
+                        print("[Danbooru Lookup] ✓ tqdm verified")
+                    except ImportError:
+                        verification_failed.append("tqdm")
+                    
+                    try:
+                        from imgutils.tagging import wd14
+                        print("[Danbooru Lookup] ✓ dghs-imgutils verified")
+                    except ImportError:
+                        verification_failed.append("dghs-imgutils")
+                    
+                    try:
+                        import PIL
+                        print("[Danbooru Lookup] ✓ PIL verified")
+                    except ImportError:
+                        verification_failed.append("PIL")
+                    
+                    try:
+                        import jax
+                        import jax.numpy as jnp
+                        import flax
+                        print("[Danbooru Lookup] ✓ JAX/FLAX verified")
+                    except ImportError:
+                        verification_failed.append("jax/flax")
+                    
+                    if not verification_failed:
+                        DEPENDENCIES_INSTALLED = True
+                        print("[Danbooru Lookup] All dependencies installed and verified successfully!")
+                    else:
+                        print(f"[Danbooru Lookup] Failed to verify: {', '.join(verification_failed)}")
+                        print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
+                        
+                except Exception as e:
+                    print(f"[Danbooru Lookup] Verification error: {e}")
                     print("[Danbooru Lookup] Dependencies installed but require restart to fully activate.")
                         
         except Exception as install_error:
@@ -233,7 +305,16 @@ if missing_deps:
     if not DEPENDENCIES_INSTALLED:
         print("[Danbooru Lookup] Dependencies will be installed automatically on next restart.")
         print("[Danbooru Lookup] Please restart ComfyUI.")
-        print("[Danbooru Lookup] If you're seeing old error messages, Python cache may need clearing.")
+        
+        # For portable installations, provide more specific help
+        if "python_embeded" in sys.executable or "python_embedded" in sys.executable:
+            print("[Danbooru Lookup] Detected portable ComfyUI installation.")
+            print("[Danbooru Lookup] If installation keeps failing:")
+            print("[Danbooru Lookup]   1. Close ComfyUI completely")
+            print("[Danbooru Lookup]   2. Delete __pycache__ folders in custom_nodes/comfyui-danbooru-lookup/")
+            print("[Danbooru Lookup]   3. Run: python_embeded\\python.exe -m pip install jax jaxlib flax")
+            print("[Danbooru Lookup]   4. Restart ComfyUI")
+        
         print("[Danbooru Lookup] You can also run: python manual_install.py")
 
 # Create a stub node if dependencies are missing

@@ -41,11 +41,37 @@ def run_command(cmd, description):
         print(f"\n✗ ERROR: {e}")
         return False
 
+def clear_python_cache():
+    """Clear Python cache files that might be causing import issues."""
+    print("\nClearing Python cache...")
+    script_dir = Path(__file__).parent
+    cache_dirs = list(script_dir.glob("**/__pycache__"))
+    
+    if cache_dirs:
+        for cache_dir in cache_dirs:
+            try:
+                import shutil
+                shutil.rmtree(cache_dir)
+                print(f"  Removed: {cache_dir}")
+            except Exception as e:
+                print(f"  Failed to remove {cache_dir}: {e}")
+    else:
+        print("  No cache directories found.")
+
 def main():
     print("Danbooru FAISS Lookup - Manual Installation Helper")
     print(f"Python: {sys.executable}")
     print(f"Version: {sys.version}")
     print(f"Working directory: {os.getcwd()}")
+    
+    # Detect portable installation
+    if "python_embeded" in sys.executable or "python_embedded" in sys.executable:
+        print("\n*** PORTABLE COMFYUI DETECTED ***")
+        print("This can sometimes cause installation issues.")
+        print("If installation fails repeatedly, try:")
+        print("  1. Clear Python cache (this script will do it)")
+        print("  2. Install packages one by one")
+        print("  3. Restart ComfyUI after installation")
     
     # Change to script directory
     script_dir = Path(__file__).parent
@@ -59,6 +85,11 @@ def main():
         return 1
     
     print(f"\nFound requirements.txt at: {req_file}")
+    
+    # Step 0: Clear Python cache
+    print("\n" + "="*60)
+    print("STEP 0: Clearing Python cache...")
+    clear_python_cache()
     
     # Step 1: Try updating pip first
     print("\n" + "="*60)
@@ -97,11 +128,16 @@ def main():
                 if "dghs-imgutils[gpu]" in pkg:
                     print("\nTrying dghs-imgutils without GPU support...")
                     run_command([sys.executable, "-m", "pip", "install", "dghs-imgutils"], "Install dghs-imgutils (CPU)")
-                elif "jax" in pkg:
-                    print("\nTrying JAX with different order...")
-                    run_command([sys.executable, "-m", "pip", "install", "jaxlib"], "Install jaxlib first")
-                    run_command([sys.executable, "-m", "pip", "install", "jax"], "Install jax")
-                    run_command([sys.executable, "-m", "pip", "install", "flax"], "Install flax")
+                elif "jax" in pkg.lower():
+                    print("\nTrying JAX with proper installation order...")
+                    # For portable installations, sometimes we need --no-cache-dir
+                    cache_flag = ["--no-cache-dir"] if "python_embeded" in sys.executable else []
+                    run_command([sys.executable, "-m", "pip", "install"] + cache_flag + ["jaxlib"], "Install jaxlib first")
+                    run_command([sys.executable, "-m", "pip", "install"] + cache_flag + ["jax"], "Install jax")
+                    run_command([sys.executable, "-m", "pip", "install"] + cache_flag + ["flax"], "Install flax")
+                elif "flax" in pkg.lower():
+                    # Skip if already handled with jax
+                    continue
     
     # Step 4: Verify installation
     print("\n" + "="*60)
