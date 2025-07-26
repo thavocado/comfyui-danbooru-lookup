@@ -11,16 +11,53 @@ from pathlib import Path
 from typing import Optional, List, Dict, Union
 import json
 
+# Try to import flax once at module level to avoid duplicate registrations
+_flax_module = None
+_flax_serialization = None
+_flax_linen = None
+_jax_module = None
+
+try:
+    if 'flax' in sys.modules:
+        _flax_module = sys.modules['flax']
+        if 'flax.serialization' in sys.modules:
+            _flax_serialization = sys.modules['flax.serialization']
+        if 'flax.linen' in sys.modules:
+            _flax_linen = sys.modules['flax.linen']
+    else:
+        import flax
+        _flax_module = flax
+        import flax.serialization
+        _flax_serialization = flax.serialization
+        import flax.linen
+        _flax_linen = flax.linen
+        
+    if 'jax' in sys.modules:
+        _jax_module = sys.modules['jax']
+    else:
+        import jax
+        _jax_module = jax
+except ImportError:
+    pass
+except Exception as e:
+    if "PyTreeDef" not in str(e):
+        logging.debug(f"[Tag Embeddings] Module-level import error: {e}")
+
 def _check_jax_available():
     """Check if JAX/FLAX is available (dynamic check)."""
-    # Check if already loaded to avoid re-importing
+    # Check our module-level imports first
+    if _flax_module is not None and _jax_module is not None:
+        return True
+    
+    # Check if already loaded in sys.modules
     if 'jax' in sys.modules and 'flax' in sys.modules:
         return True
     
     try:
-        import jax
-        import jax.numpy as jnp
-        import flax
+        if _jax_module is None:
+            import jax
+        if _flax_module is None:
+            import flax
         return True
     except ImportError:
         return False
@@ -66,8 +103,10 @@ def _get_clip_model_class():
         if not _check_jax_available():
             raise ImportError("JAX is not available")
         
-        # Import JAX modules
-        if 'flax.linen' in sys.modules:
+        # Use module-level import if available
+        if _flax_linen is not None:
+            nn = _flax_linen
+        elif 'flax.linen' in sys.modules:
             nn = sys.modules['flax.linen']
         else:
             import flax.linen as nn
@@ -214,12 +253,19 @@ class TagEmbeddings:
         
         try:
             if _check_jax_available():
-                # Load msgpack parameters
-                import flax
+                # Load msgpack parameters using module-level import
+                if _flax_serialization is not None:
+                    serialization = _flax_serialization
+                elif 'flax.serialization' in sys.modules:
+                    serialization = sys.modules['flax.serialization']
+                else:
+                    import flax.serialization
+                    serialization = flax.serialization
+                
                 with open(model_path, "rb") as f:
                     data = f.read()
                 
-                params = flax.serialization.msgpack_restore(data)
+                params = serialization.msgpack_restore(data)
                 # The params should be under "model" key based on original implementation
                 if "model" in params:
                     self.model_params[variant] = params["model"]
@@ -324,8 +370,10 @@ class TagEmbeddings:
             # Create model instance
             model = model_class(out_units=out_units)
             
-            # Import jax only when needed, but check if already loaded
-            if 'jax' in sys.modules:
+            # Use module-level jax import if available
+            if _jax_module is not None:
+                jax = _jax_module
+            elif 'jax' in sys.modules:
                 jax = sys.modules['jax']
             else:
                 import jax
