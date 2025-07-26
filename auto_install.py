@@ -44,19 +44,15 @@ def main():
     # Additional packages for full functionality
     additional_packages = [
         "huggingface-hub>=0.16.0",
-        "Pillow>=9.0.0"
+        "Pillow>=9.0.0",
+        "jax>=0.4.0",
+        "jaxlib>=0.4.0", 
+        "flax>=0.7.0"
     ]
     
     # WD14 support (try GPU version first)
     wd14_packages = [
         ("dghs-imgutils[gpu]>=0.17.0", "dghs-imgutils>=0.17.0")  # (preferred, fallback)
-    ]
-    
-    # Tag encoding support (optional, can be large)
-    tag_packages = [
-        "jax>=0.4.0",
-        "jaxlib>=0.4.0", 
-        "flax>=0.7.0"
     ]
     
     failed = []
@@ -91,19 +87,6 @@ def main():
             if not try_install_package(cpu_version):
                 print("[WARNING] dghs-imgutils installation failed. Image inputs won't work.")
     
-    # Ask about tag support
-    print("\n[Danbooru Lookup] Tag encoding requires JAX/FLAX (large download).")
-    print("Install tag encoding support? (y/N): ", end="")
-    try:
-        response = input().strip().lower()
-        if response == 'y':
-            print("\nInstalling JAX/FLAX for tag encoding...")
-            for package in tag_packages:
-                print(f"\nInstalling {package}...")
-                if not try_install_package(package):
-                    print(f"[WARNING] Failed to install {package}")
-    except:
-        print("\nSkipping tag encoding support.")
     
     if failed:
         print(f"\n[ERROR] Failed to install core dependencies: {', '.join(failed)}")

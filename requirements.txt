@@ -18,8 +18,7 @@ Pillow>=9.0.0
 # Note: Will try GPU version first, fallback to CPU if needed
 dghs-imgutils[gpu]>=0.17.0
 
-# For CLIP/SigLIP tag support (optional - large download)
-# Uncomment these lines or run: pip install jax jaxlib flax
-# jax>=0.4.0
-# jaxlib>=0.4.0
-# flax>=0.7.0
+# For CLIP/SigLIP tag support
+jax>=0.4.0
+jaxlib>=0.4.0
+flax>=0.7.0

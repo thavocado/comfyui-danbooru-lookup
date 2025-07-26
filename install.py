@@ -125,11 +125,7 @@ def install_requirements():
                 cmd = [python_exec, "-m", "pip", "install", package]
             run_command(cmd, cwd=str(Path(__file__).parent))
     
-    print("\n[INFO] Core installation complete.")
-    print("\nFor tag encoding support, additionally install:")
-    print("  pip install jax jaxlib flax")
-    print("\nOr install all features with:")
-    print(f"  pip install -r {Path(__file__).parent / 'requirements-full.txt'}")
+    print("\n[INFO] Installation complete.")
     
     return True
 
