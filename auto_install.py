@@ -32,7 +32,8 @@ def try_install_package(package_name, pip_args=None):
 
 def main():
     """Install all required packages"""
-    packages = [
+    # Core packages (always needed)
+    core_packages = [
         "numpy>=1.21.0",
         "pandas>=1.3.0", 
         "requests>=2.25.0",
@@ -40,11 +41,30 @@ def main():
         "faiss-cpu>=1.7.0"
     ]
     
+    # Additional packages for full functionality
+    additional_packages = [
+        "huggingface-hub>=0.16.0",
+        "Pillow>=9.0.0"
+    ]
+    
+    # WD14 support (try GPU version first)
+    wd14_packages = [
+        ("dghs-imgutils[gpu]>=0.17.0", "dghs-imgutils>=0.17.0")  # (preferred, fallback)
+    ]
+    
+    # Tag encoding support (optional, can be large)
+    tag_packages = [
+        "jax>=0.4.0",
+        "jaxlib>=0.4.0", 
+        "flax>=0.7.0"
+    ]
+    
     failed = []
     
-    print("[Danbooru Lookup] Installing dependencies one by one...")
+    print("[Danbooru Lookup] Installing core dependencies...")
     
-    for package in packages:
+    # Install core packages
+    for package in core_packages:
         print(f"\nInstalling {package}...")
         if not try_install_package(package):
             # Try without version constraint
@@ -54,11 +74,43 @@ def main():
                 if not try_install_package(package, ["--user"]):
                     failed.append(package)
     
+    # Install additional packages
+    print("\n[Danbooru Lookup] Installing additional packages...")
+    for package in additional_packages:
+        print(f"\nInstalling {package}...")
+        if not try_install_package(package):
+            package_name = package.split(">=")[0]
+            try_install_package(package_name)  # Best effort
+    
+    # Install WD14 support
+    print("\n[Danbooru Lookup] Installing WD14 image support...")
+    for gpu_version, cpu_version in wd14_packages:
+        print(f"\nTrying GPU version: {gpu_version}")
+        if not try_install_package(gpu_version):
+            print(f"GPU version failed, trying CPU version: {cpu_version}")
+            if not try_install_package(cpu_version):
+                print("[WARNING] dghs-imgutils installation failed. Image inputs won't work.")
+    
+    # Ask about tag support
+    print("\n[Danbooru Lookup] Tag encoding requires JAX/FLAX (large download).")
+    print("Install tag encoding support? (y/N): ", end="")
+    try:
+        response = input().strip().lower()
+        if response == 'y':
+            print("\nInstalling JAX/FLAX for tag encoding...")
+            for package in tag_packages:
+                print(f"\nInstalling {package}...")
+                if not try_install_package(package):
+                    print(f"[WARNING] Failed to install {package}")
+    except:
+        print("\nSkipping tag encoding support.")
+    
     if failed:
-        print(f"\n[ERROR] Failed to install: {', '.join(failed)}")
+        print(f"\n[ERROR] Failed to install core dependencies: {', '.join(failed)}")
         return False
     else:
-        print("\n[SUCCESS] All dependencies installed!")
+        print("\n[SUCCESS] Core dependencies installed!")
+        print("Some optional features may require additional setup.")
         return True
 
 if __name__ == "__main__":

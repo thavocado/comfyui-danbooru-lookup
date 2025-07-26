@@ -1,0 +1,20 @@
+# Full requirements - all features enabled
+
+# Core requirements (always needed)
+faiss-cpu>=1.7.0
+numpy>=1.21.0
+pandas>=1.3.0
+requests>=2.25.0
+tqdm>=4.60.0
+
+# For full functionality
+huggingface-hub>=0.16.0
+Pillow>=9.0.0
+
+# For WD14 tagger support
+dghs-imgutils[gpu]>=0.17.0
+
+# For CLIP/SigLIP tag encoding
+jax>=0.4.0
+jaxlib>=0.4.0
+flax>=0.7.0

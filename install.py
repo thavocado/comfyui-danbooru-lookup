@@ -95,12 +95,42 @@ def install_requirements():
     # Run installation
     result = run_command(cmd, cwd=str(Path(__file__).parent))
     
+    # If dghs-imgutils[gpu] failed, try without GPU
     if result != 0:
-        print("[ERROR] Failed to install some dependencies. Please install manually:")
-        print(f"  pip install -r {requirements_file}")
-        return False
+        print("\n[WARNING] Some packages failed. Trying fallback installation...")
+        
+        # Install core packages first
+        core_file = Path(__file__).parent / "requirements-core.txt"
+        if core_file.exists():
+            print("\nInstalling core packages...")
+            if install_type == "portable":
+                cmd = [python_exec, "-s", "-m", "pip", "install", "-r", str(core_file)]
+            else:
+                cmd = [python_exec, "-m", "pip", "install", "-r", str(core_file)]
+            run_command(cmd, cwd=str(Path(__file__).parent))
+        
+        # Try dghs-imgutils without GPU
+        print("\nTrying dghs-imgutils without GPU support...")
+        if install_type == "portable":
+            cmd = [python_exec, "-s", "-m", "pip", "install", "dghs-imgutils>=0.17.0"]
+        else:
+            cmd = [python_exec, "-m", "pip", "install", "dghs-imgutils>=0.17.0"]
+        run_command(cmd, cwd=str(Path(__file__).parent))
+        
+        # Install other recommended packages
+        for package in ["huggingface-hub>=0.16.0", "Pillow>=9.0.0"]:
+            if install_type == "portable":
+                cmd = [python_exec, "-s", "-m", "pip", "install", package]
+            else:
+                cmd = [python_exec, "-m", "pip", "install", package]
+            run_command(cmd, cwd=str(Path(__file__).parent))
     
-    print("[SUCCESS] All dependencies installed successfully!")
+    print("\n[INFO] Core installation complete.")
+    print("\nFor tag encoding support, additionally install:")
+    print("  pip install jax jaxlib flax")
+    print("\nOr install all features with:")
+    print(f"  pip install -r {Path(__file__).parent / 'requirements-full.txt'}")
+    
     return True
 
 def main():

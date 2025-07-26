@@ -151,9 +151,13 @@ class TagEmbeddings:
         """Encode tags to embeddings."""
         # Load model if needed
         if not self.load_model_params(variant):
-            error_msg = f"Failed to load {variant} model. Please ensure the model files are downloaded."
+            error_msg = f"Failed to load {variant} model."
             logging.error(f"[Tag Embeddings] {error_msg}")
-            raise RuntimeError(error_msg)
+            logging.error("[Tag Embeddings] This feature requires JAX/FLAX to be installed:")
+            logging.error("[Tag Embeddings]   pip install jax jaxlib flax")
+            logging.error("[Tag Embeddings] Or install all features:")
+            logging.error(f"[Tag Embeddings]   pip install -r requirements-full.txt")
+            raise RuntimeError(error_msg + " Install JAX/FLAX: pip install jax jaxlib flax")
         
         # Convert tags to indices
         indices = self.tags_to_indices(tags)

@@ -121,7 +121,10 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         # Check if WD14 is available
         if (positive_image is not None or negative_image is not None) and not self.wd14_embeddings.is_available():
             logging.error("[Danbooru Advanced] Images provided but WD14 embeddings not available!")
-            logging.error("[Danbooru Advanced] Please install: pip install dghs-imgutils[gpu]")
+            logging.error("[Danbooru Advanced] Please install dghs-imgutils:")
+            logging.error("[Danbooru Advanced]   For GPU: pip install dghs-imgutils[gpu]")
+            logging.error("[Danbooru Advanced]   For CPU: pip install dghs-imgutils")
+            logging.error("[Danbooru Advanced] Or run the installer: python install.py")
             return None, None
         
         if positive_image is not None and self.wd14_embeddings.is_available():
