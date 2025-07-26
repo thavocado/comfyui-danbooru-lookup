@@ -8,30 +8,56 @@ import subprocess
 import os
 from pathlib import Path
 
+def detect_install_type():
+    """Detect the installation type based on Python executable"""
+    python_exec = sys.executable
+    
+    if "python_embeded" in python_exec or "python_embedded" in python_exec:
+        return "portable"
+    elif ".venv" in python_exec or "venv" in python_exec:
+        return "venv"
+    else:
+        return "system"
+
 def try_install_package(package_name, pip_args=None):
-    """Try to install a single package with multiple methods"""
+    """Try to install a single package"""
     if pip_args is None:
         pip_args = []
     
-    commands = [
-        [sys.executable, "-m", "pip", "install"] + pip_args + [package_name],
-        [sys.executable, "-s", "-m", "pip", "install"] + pip_args + [package_name],
-        ["pip", "install"] + pip_args + [package_name],
-        ["pip3", "install"] + pip_args + [package_name],
-    ]
+    install_type = detect_install_type()
     
-    for cmd in commands:
+    # Build the command based on install type
+    if install_type == "portable":
+        cmd = [sys.executable, "-s", "-m", "pip", "install"] + pip_args + [package_name]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install"] + pip_args + [package_name]
+    
+    try:
+        print(f"[{install_type}] Installing: {package_name}")
+        result = subprocess.run(cmd, capture_output=False)
+        if result.returncode == 0:
+            return True
+    except Exception as e:
+        print(f"Error: {e}")
+    
+    # Fallback: try without -s flag
+    if install_type == "portable":
         try:
-            print(f"Trying: {' '.join(cmd)}")
+            cmd = [sys.executable, "-m", "pip", "install"] + pip_args + [package_name]
+            print(f"[{install_type}] Retrying without -s flag...")
             result = subprocess.run(cmd, capture_output=False)
             if result.returncode == 0:
                 return True
         except:
-            continue
+            pass
+    
     return False
 
 def main():
     """Install all required packages"""
+    install_type = detect_install_type()
+    print(f"[Danbooru Lookup] Using {install_type} Python: {sys.executable}")
+    
     # Core packages (always needed)
     core_packages = [
         "numpy>=1.21.0",

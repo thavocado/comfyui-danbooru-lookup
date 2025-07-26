@@ -32,13 +32,27 @@ except ImportError as e:
         try:
             import subprocess
             
-            # Try different pip installation methods
-            pip_commands = [
-                [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
-                [sys.executable, "-s", "-m", "pip", "install", "-r", str(requirements_file)],  # For portable Python
-                ["pip", "install", "-r", str(requirements_file)],
-                ["pip3", "install", "-r", str(requirements_file)],
-            ]
+            # Detect install type
+            python_exec = sys.executable
+            if "python_embeded" in python_exec or "python_embedded" in python_exec:
+                install_type = "portable"
+            elif ".venv" in python_exec or "venv" in python_exec:
+                install_type = "venv"
+            else:
+                install_type = "system"
+            
+            print(f"[Danbooru Lookup] Using {install_type} Python: {python_exec}")
+            
+            # Try appropriate pip installation method
+            if install_type == "portable":
+                pip_commands = [
+                    [sys.executable, "-s", "-m", "pip", "install", "-r", str(requirements_file)],
+                    [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],  # Fallback without -s
+                ]
+            else:
+                pip_commands = [
+                    [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
+                ]
             
             install_success = False
             for cmd in pip_commands:

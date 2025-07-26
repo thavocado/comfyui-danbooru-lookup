@@ -49,34 +49,19 @@ def run_command(cmd, cwd=None):
 
 def detect_python_executable():
     """Detect the appropriate Python executable"""
-    import platform
+    # Use the Python that's currently running this script
+    # This ensures we use the same Python that ComfyUI is using
+    python_exec = sys.executable
     
-    # Get the directory where this script is located
-    script_dir = Path(__file__).parent
+    # Determine install type based on the executable path
+    if "python_embeded" in python_exec or "python_embedded" in python_exec:
+        install_type = "portable"
+    elif ".venv" in python_exec or "venv" in python_exec:
+        install_type = "venv"
+    else:
+        install_type = "system"
     
-    # Determine the Python executable name based on the platform
-    is_windows = platform.system() == "Windows"
-    python_names = ["python.exe"] if is_windows else ["python3", "python"]
-    
-    # Check for ComfyUI portable Python
-    for python_name in python_names:
-        # Standard portable location (go up from custom_nodes/comfyui-danbooru-lookup/)
-        portable_python = script_dir.parent.parent / "python_embeded" / python_name
-        if portable_python.exists():
-            return str(portable_python.absolute()), "portable"
-        
-        # Alternative portable location
-        portable_python2 = script_dir.parent.parent.parent / "python_embeded" / python_name
-        if portable_python2.exists():
-            return str(portable_python2.absolute()), "portable"
-        
-        # Check for Aki Python
-        aki_python = script_dir.parent.parent / "python" / python_name
-        if aki_python.exists():
-            return str(aki_python.absolute()), "aki"
-    
-    # Use system Python
-    return sys.executable, "system"
+    return python_exec, install_type
 
 def install_requirements():
     """Install requirements using the appropriate Python executable"""
@@ -87,6 +72,7 @@ def install_requirements():
     print(f"Using {install_type} Python: {python_exec}")
     
     # Build pip install command
+    # Use -s flag for portable to ignore user site-packages
     if install_type == "portable":
         cmd = [python_exec, "-s", "-m", "pip", "install", "-r", str(requirements_file)]
     else:
