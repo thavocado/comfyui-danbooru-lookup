@@ -132,6 +132,15 @@ else:
         except ImportError as e:
             print(f"[Danbooru Lookup] Advanced node not available: {e}")
             print("[Danbooru Lookup] Basic node is still available")
+        
+        # Try to load WD14 to Conditioning node
+        try:
+            from .modules.wd14_to_conditioning import NODE_CLASS_MAPPINGS as WD14_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as WD14_DISPLAY
+            NODE_CLASS_MAPPINGS.update(WD14_MAPPINGS)
+            NODE_DISPLAY_NAME_MAPPINGS.update(WD14_DISPLAY)
+            print("[Danbooru Lookup] WD14 to Conditioning node loaded successfully")
+        except ImportError as e:
+            print(f"[Danbooru Lookup] WD14 to Conditioning node not available: {e}")
             
     except Exception as e:
         print(f"[ERROR] Failed to load Danbooru FAISS Lookup node: {e}")

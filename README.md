@@ -22,6 +22,15 @@ A ComfyUI custom node that performs FAISS cosine similarity lookup on Danbooru e
 - **Extended outputs**: Returns top match ID, all matching IDs, and similarity scores
 - **Model selection**: Choose between CLIP and SigLIP for tag encoding
 
+### WD14 to Conditioning Node
+- **Purpose**: Convert images to conditioning using WD14 embeddings
+- **Input**: Any image (from LoadImage, VAE Decode, etc.)
+- **Output**: CONDITIONING that can be used with lookup nodes
+- **Use cases**:
+  - Preprocess images once and reuse the conditioning
+  - Combine multiple image embeddings using conditioning nodes
+  - Create cleaner workflows with the conditioning mode
+
 ## Installation
 
 1. Clone this repository into your ComfyUI custom_nodes folder:
@@ -70,6 +79,19 @@ The advanced node outputs:
 - `danbooru_id`: Best matching post ID
 - `all_ids`: Comma-separated list of all matching IDs
 - `similarity_scores`: Comma-separated similarity scores
+
+### WD14 to Conditioning
+1. Find the "WD14 to Conditioning" node under the "conditioning/danbooru" category
+2. Connect an image from LoadImage or any other image source
+3. Optional: Add HuggingFace token if you get authentication errors
+4. Connect the CONDITIONING output to:
+   - Basic or Advanced Danbooru lookup nodes (conditioning inputs)
+   - Other conditioning manipulation nodes
+   - Conditioning Combine nodes to merge multiple images
+
+Example workflow:
+- LoadImage → WD14 to Conditioning → DanbooruFAISSLookup (positive_conditioning)
+- Multiple images → Multiple WD14 nodes → Conditioning Average → Lookup
 
 ## Data Source
 
