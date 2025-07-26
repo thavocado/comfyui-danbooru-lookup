@@ -119,9 +119,20 @@ if not DEPENDENCIES_INSTALLED:
         "DanbooruFAISSLookup": "Danbooru FAISS Lookup (INSTALL REQUIRED)"
     }
 else:
-    # Dependencies are installed, load the real node
+    # Dependencies are installed, load the real nodes
     try:
         from .modules.danbooru_lookup import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+        
+        # Try to load advanced node if additional dependencies are available
+        try:
+            from .modules.danbooru_lookup_advanced import NODE_CLASS_MAPPINGS as ADV_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as ADV_DISPLAY
+            NODE_CLASS_MAPPINGS.update(ADV_MAPPINGS)
+            NODE_DISPLAY_NAME_MAPPINGS.update(ADV_DISPLAY)
+            print("[Danbooru Lookup] Advanced node loaded successfully")
+        except ImportError as e:
+            print(f"[Danbooru Lookup] Advanced node not available: {e}")
+            print("[Danbooru Lookup] Basic node is still available")
+            
     except Exception as e:
         print(f"[ERROR] Failed to load Danbooru FAISS Lookup node: {e}")
         traceback.print_exc()

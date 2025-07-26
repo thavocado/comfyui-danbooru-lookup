@@ -29,10 +29,21 @@ wheels/
 
 # Data files (downloaded from HuggingFace)
 data/
+index/
+models/
 *.npy
 *.index
 *.csv
-*.json
+!requirements.txt
+!__init__.py
+
+# Model files
+*.onnx
+*.msgpack
+*.pkl
+*.pth
+*.safetensors
+*.bin
 
 # IDE
 .vscode/
