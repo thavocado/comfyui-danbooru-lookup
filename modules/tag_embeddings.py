@@ -50,64 +50,9 @@ _clip_model_class = None
 _jax_import_error = None
 _models_defined = False
 
-# Define model classes at module level when JAX is available
-TextEncoder = None
-CLIPModel = None
-
-# Try to define models once when module loads (if JAX available)
-if _check_jax_available():
-    try:
-        if 'flax.linen' in sys.modules:
-            nn = sys.modules['flax.linen']
-        else:
-            import flax.linen as nn
-        
-        class TextEncoder(nn.Module):
-            """CLIP Text Encoder with residual connections."""
-            out_units: int = 1024
-            
-            @nn.compact
-            def __call__(self, x, training=False):
-                # First dense layer
-                x = nn.Dense(features=self.out_units)(x)
-                
-                # Residual branch with SiLU activation
-                res = nn.silu(x)
-                res = nn.Dense(features=self.out_units)(res)
-                res = nn.Dropout(0.1)(res, deterministic=not training)
-                
-                # Residual connection
-                x = x + res
-                return x
-        
-        class CLIPModel(nn.Module):
-            """CLIP model for tag encoding."""
-            out_units: int = 1024
-            
-            def setup(self):
-                self.text_enc = TextEncoder(out_units=self.out_units)
-            
-            def encode_text(self, text):
-                """Encode text (tag one-hot) to embeddings."""
-                return self.text_enc(text, training=False)
-            
-            @nn.compact
-            def __call__(self, image, text, training=False):
-                # We only need encode_text for tag embeddings
-                text_emb = self.encode_text(text)
-                return text_emb
-        
-        _models_defined = True
-        _clip_model_class = CLIPModel
-        
-    except Exception as e:
-        if "PyTreeDef" not in str(e):
-            logging.error(f"[Tag Embeddings] Failed to define CLIP models: {e}")
-        _models_defined = False
-
 def _get_clip_model_class():
     """Get the CLIP model class, importing JAX only when needed."""
-    global _clip_model_class, _jax_import_error, _models_defined, TextEncoder, CLIPModel
+    global _clip_model_class, _jax_import_error, _models_defined
     
     # If models are already defined, return them
     if _models_defined and _clip_model_class is not None:
@@ -121,71 +66,113 @@ def _get_clip_model_class():
         if not _check_jax_available():
             raise ImportError("JAX is not available")
         
-        # If we get here but models aren't defined, it means we need to define them now
-        if not _models_defined:
-            # Import JAX modules
-            if 'flax.linen' in sys.modules:
-                nn = sys.modules['flax.linen']
-            else:
-                import flax.linen as nn
-            
-            # Only define if not already in globals
-            if 'TextEncoder' not in globals() or TextEncoder is None:
-                class TextEncoder(nn.Module):
-                    """CLIP Text Encoder with residual connections."""
-                    out_units: int = 1024
-                    
-                    @nn.compact
-                    def __call__(self, x, training=False):
-                        # First dense layer
-                        x = nn.Dense(features=self.out_units)(x)
-                        
-                        # Residual branch with SiLU activation
-                        res = nn.silu(x)
-                        res = nn.Dense(features=self.out_units)(res)
-                        res = nn.Dropout(0.1)(res, deterministic=not training)
-                        
-                        # Residual connection
-                        x = x + res
-                        return x
-                
-                class CLIPModel(nn.Module):
-                    """CLIP model for tag encoding."""
-                    out_units: int = 1024
-                    
-                    def setup(self):
-                        self.text_enc = TextEncoder(out_units=self.out_units)
-                    
-                    def encode_text(self, text):
-                        """Encode text (tag one-hot) to embeddings."""
-                        return self.text_enc(text, training=False)
-                    
-                    @nn.compact
-                    def __call__(self, image, text, training=False):
-                        # We only need encode_text for tag embeddings
-                        text_emb = self.encode_text(text)
-                        return text_emb
-                
-                globals()['TextEncoder'] = TextEncoder
-                globals()['CLIPModel'] = CLIPModel
-                _clip_model_class = CLIPModel
-                _models_defined = True
+        # Import JAX modules
+        if 'flax.linen' in sys.modules:
+            nn = sys.modules['flax.linen']
+        else:
+            import flax.linen as nn
         
-        return _clip_model_class
+        # Check if we can safely define the models
+        # If we get here, we'll define the models in the local scope
+        # to avoid module-level conflicts
+        
+        # Create the model classes in a protected way
+        try:
+            # Use exec to create the classes in a controlled environment
+            # This helps avoid some of the PyTreeDef registration issues
+            model_code = '''
+class TextEncoder(nn.Module):
+    """CLIP Text Encoder with residual connections."""
+    out_units: int = 1024
+    
+    @nn.compact
+    def __call__(self, x, training=False):
+        # First dense layer
+        x = nn.Dense(features=self.out_units)(x)
+        
+        # Residual branch with SiLU activation
+        res = nn.silu(x)
+        res = nn.Dense(features=self.out_units)(res)
+        res = nn.Dropout(0.1)(res, deterministic=not training)
+        
+        # Residual connection
+        x = x + res
+        return x
+
+class CLIPModel(nn.Module):
+    """CLIP model for tag encoding."""
+    out_units: int = 1024
+    
+    def setup(self):
+        self.text_enc = TextEncoder(out_units=self.out_units)
+    
+    def encode_text(self, text):
+        """Encode text (tag one-hot) to embeddings."""
+        return self.text_enc(text, training=False)
+    
+    @nn.compact
+    def __call__(self, image, text, training=False):
+        # We only need encode_text for tag embeddings
+        text_emb = self.encode_text(text)
+        return text_emb
+'''
+            
+            # Execute in a namespace with nn available
+            namespace = {'nn': nn}
+            exec(model_code, namespace)
+            
+            # Extract the classes
+            CLIPModel = namespace['CLIPModel']
+            _clip_model_class = CLIPModel
+            _models_defined = True
+            
+            return CLIPModel
+            
+        except Exception as e:
+            # If exec fails, try direct definition
+            class TextEncoder(nn.Module):
+                """CLIP Text Encoder with residual connections."""
+                out_units: int = 1024
+                
+                @nn.compact
+                def __call__(self, x, training=False):
+                    # First dense layer
+                    x = nn.Dense(features=self.out_units)(x)
+                    
+                    # Residual branch with SiLU activation
+                    res = nn.silu(x)
+                    res = nn.Dense(features=self.out_units)(res)
+                    res = nn.Dropout(0.1)(res, deterministic=not training)
+                    
+                    # Residual connection
+                    x = x + res
+                    return x
+            
+            class CLIPModel(nn.Module):
+                """CLIP model for tag encoding."""
+                out_units: int = 1024
+                
+                def setup(self):
+                    self.text_enc = TextEncoder(out_units=self.out_units)
+                
+                def encode_text(self, text):
+                    """Encode text (tag one-hot) to embeddings."""
+                    return self.text_enc(text, training=False)
+                
+                @nn.compact
+                def __call__(self, image, text, training=False):
+                    # We only need encode_text for tag embeddings
+                    text_emb = self.encode_text(text)
+                    return text_emb
+            
+            _clip_model_class = CLIPModel
+            _models_defined = True
+            return CLIPModel
         
     except Exception as e:
         _jax_import_error = e
         logging.error(f"[Tag Embeddings] Failed to load JAX-based CLIP model: {e}")
-        
-        # Return a dummy class that will raise errors when used
-        class CLIPModelStub:
-            def __init__(self, out_units: int = 1024):
-                self.out_units = out_units
-            
-            def apply(self, *args, **kwargs):
-                raise NotImplementedError(f"JAX is required for CLIP model inference: {_jax_import_error}")
-        
-        return CLIPModelStub
+        raise
 
 class TagEmbeddings:
     """Convert tag names to embeddings using CLIP/SigLIP models."""
