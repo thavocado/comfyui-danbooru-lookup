@@ -82,26 +82,72 @@ if missing_deps:
         try:
             print(f"[Danbooru Lookup] Installing dependencies...")
             
-            # Simple approach - just use sys.executable like other nodes
-            cmd = [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)]
+            # Use --no-cache-dir to avoid stale cached packages
+            cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(requirements_file)]
             
             install_success = False
             try:
                 print(f"[Danbooru Lookup] Running: {' '.join(cmd)}")
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 
+                # Show pip output for debugging
+                if result.stdout:
+                    print("[Danbooru Lookup] pip output:")
+                    for line in result.stdout.strip().split('\n')[:10]:  # Show first 10 lines
+                        print(f"[Danbooru Lookup]   {line}")
+                    if len(result.stdout.strip().split('\n')) > 10:
+                        print("[Danbooru Lookup]   ... (output truncated)")
+                
                 if result.returncode == 0:
-                    print("[Danbooru Lookup] Dependencies installed successfully!")
-                    install_success = True
+                    print("[Danbooru Lookup] pip install completed successfully!")
+                    
+                    # Verify what was actually installed
+                    try:
+                        verify_cmd = [sys.executable, "-m", "pip", "list"]
+                        verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
+                        if verify_result.returncode == 0:
+                            installed_packages = verify_result.stdout.lower()
+                            critical_packages = ["msgpack", "jax ", "jaxlib", "flax", "faiss"]
+                            missing_critical = []
+                            for pkg in critical_packages:
+                                if pkg not in installed_packages:
+                                    missing_critical.append(pkg.strip())
+                            
+                            if missing_critical:
+                                print(f"[Danbooru Lookup] WARNING: Critical packages not found in pip list: {', '.join(missing_critical)}")
+                                print("[Danbooru Lookup] Will attempt individual installation...")
+                                install_success = False  # Force fallback installation
+                            else:
+                                install_success = True
+                    except:
+                        install_success = True  # Assume success if we can't verify
                 else:
                     print(f"[Danbooru Lookup] Installation failed with code {result.returncode}")
+                    if result.stderr:
+                        print(f"[Danbooru Lookup] Installation stderr: {result.stderr[:500]}")
+                    
                     if result.stderr and "Access is denied" in result.stderr:
                         print("[Danbooru Lookup] Access denied error - some packages are in use")
                         print("[Danbooru Lookup] Trying to install missing packages only...")
                         
+                        # Install msgpack first if it's missing (JAX dependency)
+                        if "msgpack" in missing_deps:
+                            print("[Danbooru Lookup] Installing msgpack first (required by JAX)...")
+                            try:
+                                cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "msgpack"]
+                                result = subprocess.run(cmd, capture_output=True, text=True)
+                                if result.returncode == 0:
+                                    print("[Danbooru Lookup]   Installed msgpack")
+                                else:
+                                    print(f"[Danbooru Lookup]   Failed to install msgpack: {result.stderr}")
+                            except Exception as e:
+                                print(f"[Danbooru Lookup]   Error installing msgpack: {e}")
+                        
                         # Try installing only the missing packages
                         for dep in missing_deps:
-                            if dep == "dghs-imgutils":
+                            if dep == "msgpack":
+                                continue  # Already handled above
+                            elif dep == "dghs-imgutils":
                                 pkg = "dghs-imgutils>=0.17.0"
                             elif dep == "jax/flax":
                                 # JAX needs special handling - install components separately
@@ -227,8 +273,25 @@ if missing_deps:
                             install_success = False
                     else:
                         if result.stderr:
-                            print(f"[Danbooru Lookup] Error: {result.stderr}")
+                            print(f"[Danbooru Lookup] Error: {result.stderr[:500]}")
                         install_success = False
+                
+                # If main install failed OR critical packages are missing, try individual installs
+                if not install_success and missing_deps:
+                    print("[Danbooru Lookup] Attempting individual package installation...")
+                    
+                    # Always install msgpack first if needed
+                    if "msgpack" in missing_deps:
+                        print("[Danbooru Lookup] Installing msgpack (required by JAX)...")
+                        try:
+                            cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "msgpack"]
+                            result = subprocess.run(cmd, capture_output=True, text=True)
+                            if result.returncode == 0:
+                                print("[Danbooru Lookup]   ✓ msgpack installed")
+                            else:
+                                print(f"[Danbooru Lookup]   ✗ msgpack failed: {result.stderr[:200]}")
+                        except Exception as e:
+                            print(f"[Danbooru Lookup]   Error: {e}")
                         
             except Exception as e:
                 print(f"[Danbooru Lookup] Installation error: {e}")
@@ -412,6 +475,14 @@ else:
         except ImportError as e:
             print(f"[Danbooru Lookup] Advanced node not available: {e}")
             print("[Danbooru Lookup] Basic node is still available")
+        except ValueError as e:
+            if "PyTreeDef" in str(e):
+                print("[Danbooru Lookup] JAX PyTreeDef conflict detected. This happens when JAX is already loaded.")
+                print("[Danbooru Lookup] The advanced node may have limited functionality.")
+                print("[Danbooru Lookup] Basic node is still available")
+            else:
+                print(f"[Danbooru Lookup] Error loading advanced node: {e}")
+                print("[Danbooru Lookup] Basic node is still available")
         
         # Try to load WD14 to Conditioning node
         try:
@@ -421,6 +492,11 @@ else:
             print("[Danbooru Lookup] WD14 to Conditioning node loaded successfully")
         except ImportError as e:
             print(f"[Danbooru Lookup] WD14 to Conditioning node not available: {e}")
+        except ValueError as e:
+            if "PyTreeDef" in str(e):
+                print("[Danbooru Lookup] JAX conflict affects WD14 node. Basic functionality still available.")
+            else:
+                print(f"[Danbooru Lookup] Error loading WD14 node: {e}")
             
     except Exception as e:
         print(f"[ERROR] Failed to load Danbooru FAISS Lookup node: {e}")
