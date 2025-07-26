@@ -96,6 +96,7 @@ class DanbooruFAISSLookup:
     RETURN_NAMES = ("danbooru_id",)
     FUNCTION = "lookup"
     CATEGORY = "conditioning/danbooru"
+    OUTPUT_NODE = False
     
     def _load_index(self):
         """Load FAISS index and related data."""
@@ -274,16 +275,17 @@ class DanbooruFAISSLookup:
             if valid_id is None and len(neighbours_ids) > 0:
                 valid_id = str(neighbours_ids[0])
             
-            return (valid_id if valid_id else "",)
+            result = valid_id if valid_id else ""
+            return {"ui": {"text": [result]}, "result": (result,)}
             
         except ImportError as e:
             error_msg = f"Missing dependency: {e}"
             logging.error(f"[Danbooru Lookup] {error_msg}")
-            return (f"ERROR: {error_msg}",)
+            return {"ui": {"text": [f"ERROR: {error_msg}"]}, "result": (f"ERROR: {error_msg}",)}
         except Exception as e:
             error_msg = f"Error during lookup: {e}"
             logging.error(f"[Danbooru Lookup] {error_msg}")
-            return (f"ERROR: {error_msg}",)
+            return {"ui": {"text": [f"ERROR: {error_msg}"]}, "result": (f"ERROR: {error_msg}",)}
 
 
 # ComfyUI node registration

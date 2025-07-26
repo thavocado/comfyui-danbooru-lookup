@@ -2,6 +2,7 @@
 WD14 tagger embeddings extraction for image inputs using dghs-imgutils.
 """
 
+import sys
 import logging
 import numpy as np
 import os
@@ -10,6 +11,10 @@ import torch
 
 def _check_imgutils_available():
     """Check if dghs-imgutils is available (dynamic check)."""
+    # Check if already loaded to avoid re-importing
+    if 'imgutils' in sys.modules or 'imgutils.tagging' in sys.modules or 'imgutils.tagging.wd14' in sys.modules:
+        return True
+    
     try:
         from imgutils.tagging import wd14
         return True
@@ -18,6 +23,10 @@ def _check_imgutils_available():
 
 def _check_pil_available():
     """Check if PIL is available (dynamic check)."""
+    # Check if already loaded to avoid re-importing
+    if 'PIL' in sys.modules or 'PIL.Image' in sys.modules:
+        return True
+    
     try:
         from PIL import Image
         return True

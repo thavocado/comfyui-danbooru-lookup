@@ -21,6 +21,10 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
     Advanced ComfyUI node that supports multiple input modes for Danbooru lookup.
     """
     
+    # Class-level cache for dependency check results
+    _deps_cache = None
+    _modes_cache = None
+    
     def __init__(self):
         super().__init__()
         self.model_manager = ModelManager()
@@ -30,7 +34,30 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
     
     def _check_available_modes(self):
         """Check which modes are available based on dependencies."""
-        deps = self.model_manager.check_dependencies()
+        # Use cached results if available to avoid re-checking dependencies
+        if DanbooruFAISSLookupAdvanced._modes_cache is not None:
+            self.modes_available = DanbooruFAISSLookupAdvanced._modes_cache
+            self.can_process_images = self.modes_available.get("_can_process_images", False)
+            self.can_process_tags = self.modes_available.get("_can_process_tags", False)
+            return
+        
+        try:
+            deps = self.model_manager.check_dependencies()
+            DanbooruFAISSLookupAdvanced._deps_cache = deps
+        except Exception as e:
+            # If dependency check fails due to PyTreeDef, use fallback
+            logging.warning(f"[Danbooru Advanced] Dependency check error: {e}")
+            if "PyTreeDef" in str(e):
+                # Assume JAX/FLAX are available if we get PyTreeDef error
+                deps = {
+                    "jax": True,
+                    "flax": True,
+                    "dghs_imgutils": WD14Embeddings.is_available(),
+                    "torch": True,  # Usually available in ComfyUI
+                    "huggingface_hub": True
+                }
+            else:
+                deps = {}
         
         # Check individual capabilities
         self.can_process_images = WD14Embeddings.is_available()
@@ -39,17 +66,22 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         self.modes_available = {
             "conditioning": True,  # Always available
             "tags_and_images": (self.can_process_images or self.can_process_tags),
-            "hybrid": True  # Can work with partial inputs
+            "hybrid": True,  # Can work with partial inputs
+            "_can_process_images": self.can_process_images,  # Store for cache
+            "_can_process_tags": self.can_process_tags  # Store for cache
         }
+        
+        # Cache the results
+        DanbooruFAISSLookupAdvanced._modes_cache = self.modes_available
         
         # Log available modes and capabilities
         logging.info(f"[Danbooru Advanced] Image processing available: {self.can_process_images}")
         logging.info(f"[Danbooru Advanced] Tag processing available: {self.can_process_tags}")
         
         for mode, available in self.modes_available.items():
-            if available:
+            if not mode.startswith("_") and available:
                 logging.info(f"[Danbooru Advanced] Mode '{mode}' is available")
-            else:
+            elif not mode.startswith("_") and not available:
                 logging.info(f"[Danbooru Advanced] Mode '{mode}' is not available (missing dependencies)")
     
     @classmethod
@@ -108,10 +140,11 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             }
         }
     
-    RETURN_TYPES = ("STRING", "STRING", "FLOAT")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("danbooru_id", "all_ids", "similarity_scores")
     FUNCTION = "lookup_advanced"
     CATEGORY = "conditioning/danbooru"
+    OUTPUT_NODE = False
     
     def _process_image_embeddings(self, positive_image, negative_image, hf_token=None) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Process images to embeddings using WD14."""
@@ -249,7 +282,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             if not self.modes_available.get(mode, False):
                 error_msg = f"Mode '{mode}' is not available. Missing dependencies."
                 logging.error(f"[Danbooru Advanced] {error_msg}")
-                return ("ERROR: " + error_msg, "", "")
+                return {"ui": {"text": ["ERROR: " + error_msg, "", ""]}, "result": ("ERROR: " + error_msg, "", "")}
             
             # Load index if not already loaded
             self._load_index()
@@ -272,7 +305,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                         error_msg = str(e)
                         if "text_projection" in error_msg:
                             error_msg = "Tag encoding failed. The CLIP/SigLIP models may need to be re-downloaded. Try deleting the models folder and restarting."
-                        return (f"ERROR: {error_msg}", "", "")
+                        return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
                 
             elif mode == "conditioning":
                 # Current mode - use conditioning
@@ -292,7 +325,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                         error_msg = str(e)
                         if "text_projection" in error_msg:
                             error_msg = "Tag encoding failed. The CLIP/SigLIP models may need to be re-downloaded. Try deleting the models folder and restarting."
-                        return (f"ERROR: {error_msg}", "", "")
+                        return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
                 
                 if positive_conditioning is not None or negative_conditioning is not None:
                     pos_cond_emb = self._extract_embeddings_from_conditioning(positive_conditioning)
@@ -317,7 +350,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                     error_msg = f"No valid inputs provided for mode '{mode}'. Please provide at least one input."
                 
                 logging.error(f"[Danbooru Advanced] {error_msg}")
-                return ("ERROR: " + error_msg, "", "")
+                return {"ui": {"text": ["ERROR: " + error_msg, "", ""]}, "result": ("ERROR: " + error_msg, "", "")}
             
             # Combine all embeddings
             embeddings = self._combine_embeddings_advanced(
@@ -348,7 +381,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                     if index_dim != embeddings.shape[1]:
                         error_msg = f"Dimension mismatch: index expects {index_dim} but got {embeddings.shape[1]}"
                         logging.error(f"[Danbooru Advanced] {error_msg}")
-                        return (f"ERROR: {error_msg}", "", "")
+                        return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
                 
                 # Perform the search
                 dists, indexes = self.knn_index.search(embeddings, k=n_neighbours)
@@ -356,7 +389,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                 # Validate results
                 if indexes is None or len(indexes) == 0:
                     logging.error("[Danbooru Advanced] FAISS search returned no results")
-                    return ("ERROR: No results from search", "", "")
+                    return {"ui": {"text": ["ERROR: No results from search", "", ""]}, "result": ("ERROR: No results from search", "", "")}
                 
                 neighbours_ids = self.images_ids[indexes][0]
                 neighbours_ids = [int(x) for x in neighbours_ids]
@@ -368,7 +401,7 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                 logging.error(f"[Danbooru Advanced] {error_msg}")
                 import traceback
                 traceback.print_exc()
-                return (f"ERROR: {error_msg}", "", "")
+                return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
             
             # Format results
             all_ids = []
@@ -394,16 +427,16 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             all_ids_str = ",".join(all_ids)
             scores_str = ",".join([f"{s:.4f}" for s in all_scores])
             
-            return (top_id, all_ids_str, scores_str)
+            return {"ui": {"text": [top_id, all_ids_str, scores_str]}, "result": (top_id, all_ids_str, scores_str)}
             
         except ImportError as e:
             error_msg = f"Missing dependency: {e}"
             logging.error(f"[Danbooru Advanced] {error_msg}")
-            return (f"ERROR: {error_msg}", "", "")
+            return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
         except Exception as e:
             error_msg = f"Error during lookup: {e}"
             logging.error(f"[Danbooru Advanced] {error_msg}")
-            return (f"ERROR: {error_msg}", "", "")
+            return {"ui": {"text": [f"ERROR: {error_msg}", "", ""]}, "result": (f"ERROR: {error_msg}", "", "")}
 
 
 # ComfyUI node registration

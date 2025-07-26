@@ -4,6 +4,7 @@ Handles WD14 tagger and CLIP/SigLIP models.
 """
 
 import os
+import sys
 import logging
 import json
 from pathlib import Path
@@ -136,28 +137,59 @@ class ModelManager:
             "torch": False,
         }
         
-        try:
-            import imgutils
+        # Check if modules are already loaded first to avoid re-importing
+        # This prevents JAX PyTreeDef duplicate registration errors
+        
+        # Check imgutils
+        if 'imgutils' in sys.modules or 'imgutils.tagging' in sys.modules:
             deps["dghs_imgutils"] = True
-        except ImportError:
-            pass
+        else:
+            try:
+                import imgutils
+                deps["dghs_imgutils"] = True
+            except ImportError:
+                pass
         
-        try:
-            import flax
+        # Check flax - avoid re-importing if already loaded
+        if 'flax' in sys.modules:
             deps["flax"] = True
-        except ImportError:
-            pass
+        else:
+            try:
+                import flax
+                deps["flax"] = True
+            except ImportError:
+                pass
+            except Exception as e:
+                # Catch other errors like PyTreeDef registration
+                if "PyTreeDef" in str(e):
+                    # JAX is already loaded, consider it available
+                    deps["flax"] = True
+                    logging.debug("Flax import had PyTreeDef issue but is likely available")
         
-        try:
-            import jax
+        # Check jax - avoid re-importing if already loaded
+        if 'jax' in sys.modules:
             deps["jax"] = True
-        except ImportError:
-            pass
+        else:
+            try:
+                import jax
+                deps["jax"] = True
+            except ImportError:
+                pass
+            except Exception as e:
+                # Catch other errors like PyTreeDef registration
+                if "PyTreeDef" in str(e):
+                    # JAX is already loaded, consider it available
+                    deps["jax"] = True
+                    logging.debug("JAX import had PyTreeDef issue but is likely available")
         
-        try:
-            import torch
+        # Check torch
+        if 'torch' in sys.modules:
             deps["torch"] = True
-        except ImportError:
-            pass
+        else:
+            try:
+                import torch
+                deps["torch"] = True
+            except ImportError:
+                pass
         
         return deps

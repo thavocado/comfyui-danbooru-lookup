@@ -3,6 +3,7 @@ Tag to embedding conversion using CLIP/SigLIP models.
 Supports both JAX/FLAX and PyTorch implementations.
 """
 
+import sys
 import logging
 import numpy as np
 import pandas as pd
@@ -12,6 +13,10 @@ import json
 
 def _check_jax_available():
     """Check if JAX/FLAX is available (dynamic check)."""
+    # Check if already loaded to avoid re-importing
+    if 'jax' in sys.modules and 'flax' in sys.modules:
+        return True
+    
     try:
         import jax
         import jax.numpy as jnp
@@ -19,9 +24,19 @@ def _check_jax_available():
         return True
     except ImportError:
         return False
+    except Exception as e:
+        # Handle PyTreeDef errors
+        if "PyTreeDef" in str(e):
+            # JAX is already loaded, consider it available
+            return True
+        return False
 
 def _check_torch_available():
     """Check if PyTorch is available (dynamic check)."""
+    # Check if already loaded to avoid re-importing
+    if 'torch' in sys.modules:
+        return True
+    
     try:
         import torch
         return True
@@ -50,9 +65,21 @@ def _get_clip_model_class():
             raise ImportError("JAX is not available")
         
         # Import JAX modules only when actually needed
-        import flax.linen as nn
-        import jax
-        import jax.numpy as jnp
+        # But check if they're already imported first
+        if 'flax.linen' in sys.modules:
+            nn = sys.modules['flax.linen']
+        else:
+            import flax.linen as nn
+            
+        if 'jax' in sys.modules:
+            jax = sys.modules['jax']
+        else:
+            import jax
+            
+        if 'jax.numpy' in sys.modules:
+            jnp = sys.modules['jax.numpy']
+        else:
+            import jax.numpy as jnp
         
         class TextEncoder(nn.Module):
             """CLIP Text Encoder with residual connections."""
@@ -260,8 +287,11 @@ class TagEmbeddings:
             # Create model instance
             model = CLIPModel(out_units=out_units)
             
-            # Import jax only when needed
-            import jax
+            # Import jax only when needed, but check if already loaded
+            if 'jax' in sys.modules:
+                jax = sys.modules['jax']
+            else:
+                import jax
             
             # Use model.apply with the loaded parameters
             embeddings = model.apply(
