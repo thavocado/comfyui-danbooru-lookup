@@ -59,9 +59,10 @@ class WD14Embeddings:
                 fmt="embedding"  # This returns embeddings instead of tags
             )
             
-            # Ensure shape is (1, embedding_dim)
-            if embeddings.ndim == 1:
-                embeddings = np.expand_dims(embeddings, 0)
+            # Match original behavior - always expand dims
+            embeddings = np.expand_dims(embeddings, 0)
+            
+            logging.info(f"[WD14] Raw embedding shape: {embeddings.shape}")
             
             return embeddings.astype(np.float32)
             

@@ -111,16 +111,12 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         if positive_image is not None and self.wd14_embeddings.is_available():
             pos_img_emb = self.wd14_embeddings.extract_embeddings(positive_image)
             if pos_img_emb is not None:
-                # Normalize
-                faiss = ensure_dependencies()[1]
-                faiss.normalize_L2(pos_img_emb)
+                logging.info(f"[Danbooru Advanced] Positive image embedding shape: {pos_img_emb.shape}")
         
         if negative_image is not None and self.wd14_embeddings.is_available():
             neg_img_emb = self.wd14_embeddings.extract_embeddings(negative_image)
             if neg_img_emb is not None:
-                # Normalize
-                faiss = ensure_dependencies()[1]
-                faiss.normalize_L2(neg_img_emb)
+                logging.info(f"[Danbooru Advanced] Negative image embedding shape: {neg_img_emb.shape}")
         
         return pos_img_emb, neg_img_emb
     
@@ -132,16 +128,12 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         if positive_tags and self.tag_embeddings.is_available():
             pos_tag_emb = self.tag_embeddings.encode_tags(positive_tags, model_variant)
             if pos_tag_emb is not None:
-                # Normalize
-                faiss = ensure_dependencies()[1]
-                faiss.normalize_L2(pos_tag_emb)
+                logging.info(f"[Danbooru Advanced] Positive tag embedding shape: {pos_tag_emb.shape}")
         
         if negative_tags and self.tag_embeddings.is_available():
             neg_tag_emb = self.tag_embeddings.encode_tags(negative_tags, model_variant)
             if neg_tag_emb is not None:
-                # Normalize
-                faiss = ensure_dependencies()[1]
-                faiss.normalize_L2(neg_tag_emb)
+                logging.info(f"[Danbooru Advanced] Negative tag embedding shape: {neg_tag_emb.shape}")
         
         return pos_tag_emb, neg_tag_emb
     
@@ -172,29 +164,39 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
         pos_combined = np_lib.zeros((1, embedding_dim), dtype=np.float32)
         neg_combined = np_lib.zeros((1, embedding_dim), dtype=np.float32)
         
-        # Add positive embeddings
+        # Process positive embeddings following original logic
         if pos_img_emb is not None:
+            faiss_lib.normalize_L2(pos_img_emb)
             pos_combined = pos_combined + pos_img_emb
         if pos_tag_emb is not None:
+            faiss_lib.normalize_L2(pos_tag_emb)
             pos_combined = pos_combined + pos_tag_emb
         if pos_cond_emb is not None:
+            faiss_lib.normalize_L2(pos_cond_emb)
             pos_combined = pos_combined + pos_cond_emb
         
-        # Add negative embeddings
+        # Process negative embeddings following original logic
         if neg_img_emb is not None:
+            faiss_lib.normalize_L2(neg_img_emb)
             neg_combined = neg_combined + neg_img_emb
         if neg_tag_emb is not None:
+            faiss_lib.normalize_L2(neg_tag_emb)
             neg_combined = neg_combined + neg_tag_emb
         if neg_cond_emb is not None:
+            faiss_lib.normalize_L2(neg_cond_emb)
             neg_combined = neg_combined + neg_cond_emb
         
-        # Normalize
+        # Normalize combined embeddings
         faiss_lib.normalize_L2(pos_combined)
         faiss_lib.normalize_L2(neg_combined)
+        
+        logging.info(f"[Danbooru Advanced] Pos combined shape: {pos_combined.shape}, Neg combined shape: {neg_combined.shape}")
         
         # Combine: positive - negative
         result = pos_combined - neg_combined
         faiss_lib.normalize_L2(result)
+        
+        logging.info(f"[Danbooru Advanced] Final embedding shape: {result.shape}, norm: {np_lib.linalg.norm(result)}")
         
         return result
     
@@ -254,6 +256,13 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
                     pos_cond_emb = self._extract_embeddings_from_conditioning(positive_conditioning)
                     neg_cond_emb = self._extract_embeddings_from_conditioning(negative_conditioning)
             
+            # Check if we have any inputs
+            if (pos_img_emb is None and pos_tag_emb is None and pos_cond_emb is None and
+                neg_img_emb is None and neg_tag_emb is None and neg_cond_emb is None):
+                error_msg = f"No valid inputs provided for mode '{mode}'. Please provide at least one input."
+                logging.error(f"[Danbooru Advanced] {error_msg}")
+                return ("ERROR: " + error_msg, "", "")
+            
             # Combine all embeddings
             embeddings = self._combine_embeddings_advanced(
                 pos_img_emb, pos_tag_emb, pos_cond_emb,
@@ -263,10 +272,18 @@ class DanbooruFAISSLookupAdvanced(DanbooruFAISSLookup):
             # Parse ratings
             ratings_list = [r.strip() for r in selected_ratings.split(",")]
             
+            # Debug: Check if embeddings are all zeros
+            np_lib = ensure_dependencies()[0]
+            if np_lib.allclose(embeddings, 0):
+                logging.warning("[Danbooru Advanced] WARNING: Final embeddings are all zeros!")
+            
             # Perform search
+            logging.info(f"[Danbooru Advanced] Searching with embedding shape: {embeddings.shape}")
             dists, indexes = self.knn_index.search(embeddings, k=n_neighbours)
             neighbours_ids = self.images_ids[indexes][0]
             neighbours_ids = [int(x) for x in neighbours_ids]
+            
+            logging.info(f"[Danbooru Advanced] Found IDs: {neighbours_ids[:5]}, distances: {dists[0][:5]}")
             
             # Format results
             all_ids = []
